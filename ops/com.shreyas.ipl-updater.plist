@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.shreyas.ipl-updater</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/Users/shreyas/extended_essay_model/ops/run_daily_update.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/shreyas/extended_essay_model</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/shreyas/extended_essay_model/ops/logs/launchd_stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/shreyas/extended_essay_model/ops/logs/launchd_stderr.log</string>
+</dict>
+</plist>
+

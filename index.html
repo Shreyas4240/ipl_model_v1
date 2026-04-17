@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="IPL resource model: predicted vs actual scores (2023+), MAE, piecewise Z₀ and run-rate shrinkage, live score predictor." />
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+  <title>IPL Resource Model – Test Results</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── THEME TOKENS ────────────────────────────────────── */
+    :root {
+      --bg:        #ffffff;
+      --bg-2:      #f5f5f5;
+      --bg-3:      #ebebeb;
+      --border:    #d4d4d4;
+      --border-2:  #b8b8b8;
+      --text:      #0a0a0a;
+      --text-2:    #404040;
+      --text-3:    #737373;
+      --accent:    #0a0a0a;
+      --green:     #16a34a;
+      --amber:     #b45309;
+      --red:       #dc2626;
+      --invert:    invert(0);
+    }
+    [data-theme="dark"] {
+      --bg:        #0a0a0a;
+      --bg-2:      #141414;
+      --bg-3:      #1f1f1f;
+      --border:    #2a2a2a;
+      --border-2:  #3d3d3d;
+      --text:      #fafafa;
+      --text-2:    #d4d4d4;
+      --text-3:    #737373;
+      --accent:    #fafafa;
+      --green:     #4ade80;
+      --amber:     #fbbf24;
+      --red:       #f87171;
+      --invert:    invert(1);
+    }
+
+    /* ── RESET + BASE ────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Sora', sans-serif;
+      font-size: 15px;
+      font-weight: 400;
+      line-height: 1.6;
+      transition: background 0.2s, color 0.2s;
+      overflow-x: hidden;
+    }
+
+    /* ── LAYOUT ──────────────────────────────────────────── */
+    .container {
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 3rem 2.5rem 5rem;
+    }
+
+    /* ── HEADER ──────────────────────────────────────────── */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 3rem;
+      padding-bottom: 2rem;
+      border-bottom: 2px solid var(--text);
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .subtitle {
+      color: var(--text-3);
+      font-size: 0.875rem;
+      font-weight: 400;
+      margin-top: 0.4rem;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── THEME TOGGLE ────────────────────────────────────── */
+    .theme-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: none;
+      border: 1.5px solid var(--border-2);
+      border-radius: 100px;
+      padding: 0.3rem 0.75rem;
+      cursor: pointer;
+      color: var(--text-3);
+      font-family: 'Sora', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      transition: all 0.15s;
+      flex-shrink: 0;
+      margin-top: 0.25rem;
+    }
+    .theme-toggle:hover { border-color: var(--text); color: var(--text); }
+    .theme-toggle .icon { font-size: 0.9rem; }
+
+    /* ── SECTION ─────────────────────────────────────────── */
+    section {
+      background: var(--bg-2);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      padding: 1.75rem;
+      margin-bottom: 1.25rem;
+    }
+    section h2 {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── CONTROLS ────────────────────────────────────────── */
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .control-row label {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    select {
+      appearance: none;
+      -webkit-appearance: none;
+      background: var(--bg-3);
+      border: 1.5px solid var(--border-2);
+      border-radius: 4px;
+      padding: 0.35rem 2rem 0.35rem 0.65rem;
+      color: var(--text);
+      font-family: 'Sora', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23737373' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.6rem center;
+      transition: border-color 0.15s;
+    }
+    select:hover { border-color: var(--text); }
+    select:focus { outline: none; border-color: var(--text); }
+    select option { background: var(--bg-2); }
+
+    .live-predictor-grid input[type="number"] {
+      background: var(--bg-3);
+      border: 1.5px solid var(--border-2);
+      border-radius: 4px;
+      padding: 0.35rem 0.65rem;
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.95rem;
+      width: 80px;
+      transition: border-color 0.15s;
+    }
+    .live-predictor-grid input[type="number"]:focus { outline: none; border-color: var(--text); }
+    .live-predictor-grid input[type="text"] {
+      background: var(--bg-3);
+      border: 1.5px solid var(--border-2);
+      border-radius: 4px;
+      padding: 0.35rem 0.65rem;
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.95rem;
+      width: 7.5rem;
+      transition: border-color 0.15s;
+    }
+    .live-predictor-grid input[type="text"]:focus { outline: none; border-color: var(--text); }
+    .live-predictor-grid input[type="text"].input-invalid { border-color: var(--red); }
+    .live-overs-hint {
+      font-size: 0.68rem;
+      color: var(--text-3);
+      margin: 0;
+      max-width: 16rem;
+      line-height: 1.35;
+    }
+    .live-overs-hint.invalid { color: var(--red); font-weight: 500; }
+    .live-rr-eff-detail { font-size: 0.72rem !important; color: var(--text-3); margin-top: 0.35rem; max-width: 14rem; line-height: 1.35; }
+    .live-rr-shrink-note { font-size: 0.72rem; color: var(--text-3); margin: 0.5rem 0 0; line-height: 1.4; max-width: 42rem; }
+    .live-match-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 0.85rem;
+      margin-top: 0.8rem;
+    }
+    .live-match-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-2);
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .live-match-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .live-match-teams-with-logos {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex: 1;
+    }
+    
+    .team {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex: 1;
+    }
+    
+    .team-logo {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+    }
+    
+    .team-name {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    
+    .vs {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--text-3);
+      padding: 0 0.2rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    
+    .live-match-badge {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+    
+    .live-match-badge.live {
+      background: var(--green);
+      color: var(--bg);
+      animation: pulse 2s infinite;
+    }
+    
+    .live-match-badge.completed {
+      background: var(--amber);
+      color: var(--bg);
+    }
+    
+    .live-match-badge.upcoming {
+      background: var(--text-3);
+      color: var(--bg);
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    .live-match-score { 
+      font-family: 'IBM Plex Mono', monospace; 
+      font-size: 0.8rem; 
+      font-weight: 600;
+      color: var(--text); 
+      text-align: center;
+      padding: 0.4rem;
+      background: var(--bg-3);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    
+    .live-match-actions {
+      display: flex;
+      justify-content: center;
+    }
+    
+    .live-match-status { font-size: 0.72rem; color: var(--text-3); }
+    .live-match-btn {
+      margin-top: 0.25rem;
+      border: 1.5px solid var(--border-2);
+      border-radius: 6px;
+      background: var(--bg-3);
+      color: var(--text);
+      padding: 0.35rem 0.55rem;
+      font-family: 'Sora', sans-serif;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .live-match-btn:hover { border-color: var(--text); }
+    .live-match-empty {
+      font-size: 0.78rem;
+      color: var(--text-3);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 0.7rem 0.8rem;
+      margin-top: 0.8rem;
+    }
+    .subtitle code {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.85em;
+      padding: 0.05em 0.25em;
+      background: var(--bg-3);
+      border-radius: 3px;
+    }
+    
+    .live-predictor-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      margin-top: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .input-group label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+    .prediction-result {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding-left: 1.5rem;
+      border-left: 1.5px solid var(--border);
+      min-width: 140px;
+    }
+    .prediction-value {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.8rem;
+      font-weight: 600;
+      color: var(--green);
+      line-height: 1.1;
+    }
+    .prediction-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-top: 0.3rem;
+    }
+
+    /* ── EQUATION BLOCK ──────────────────────────────────── */
+    .equation-block {
+      background: var(--bg-3);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.7;
+    }
+    .eq-main { color: var(--text); font-weight: 500; }
+    .eq-sub {
+      font-size: 0.75rem;
+      color: var(--text-3);
+      margin-top: 0.35rem;
+      font-family: 'Sora', sans-serif;
+      font-weight: 400;
+    }
+
+    /* ── SUMMARY STATS ───────────────────────────────────── */
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      background: var(--bg-3);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      padding: 0.6rem 1rem;
+      min-width: 120px;
+    }
+    .stat-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+    .stat-value {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+    /* Old .stat > span pattern kept for legacy render */
+    .stat span { color: var(--text-3); font-weight: 400; display: block; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+    /* ── TABLE ───────────────────────────────────────────── */
+    .table-scroll { overflow-x: auto; max-width: 100%; }
+    table {
+      width: 100%;
+      min-width: 700px;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    th {
+      padding: 0.55rem 0.75rem;
+      text-align: left;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      border-bottom: 1.5px solid var(--border-2);
+      white-space: nowrap;
+    }
+    td {
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg-3); }
+    .num { font-family: 'IBM Plex Mono', monospace; font-size: 0.83rem; }
+    .error-low  { color: var(--green); font-weight: 600; }
+    .error-mid  { color: var(--amber); font-weight: 600; }
+    .error-high { color: var(--red);   font-weight: 600; }
+
+    /* ── KEYPAD ──────────────────────────────────────────── */
+    .keypad-section {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem 1.5rem;
+      margin: 1rem 0;
+      padding: 1rem 1.25rem;
+      background: var(--bg-3);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+    }
+    .keypad-row { display: flex; align-items: center; gap: 0.5rem; }
+    .keypad-phase {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem 0.6rem;
+      width: 100%;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .keypad-phase:last-of-type { border-bottom: none; padding-bottom: 0; }
+    .keypad-phase-label {
+      min-width: 6.5rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-3);
+    }
+    .keypad-label {
+      min-width: 2rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--text-3);
+      font-weight: 500;
+    }
+    .keypad-val {
+      min-width: 4.5rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .keypad-btn {
+      width: 32px;
+      height: 32px;
+      border: 1.5px solid var(--border-2);
+      background: var(--bg-2);
+      color: var(--text);
+      border-radius: 4px;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 300;
+      transition: all 0.1s;
+    }
+    .keypad-btn:hover:not(:disabled) {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+    .keypad-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+    .simulated-stat {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--green);
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      padding: 0.3rem 0.65rem;
+      border-radius: 4px;
+    }
+    .keypad-reset {
+      margin-left: auto;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      background: transparent;
+      border: 1.5px solid var(--border-2);
+      color: var(--text-3);
+      border-radius: 4px;
+      font-family: 'Sora', sans-serif;
+      transition: all 0.1s;
+    }
+    .keypad-reset:hover { border-color: var(--text); color: var(--text); }
+    .keypad-hint {
+      margin: 0;
+      font-size: 0.72rem;
+      color: var(--text-3);
+      width: 100%;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── CHARTS ──────────────────────────────────────────── */
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-top: 1.25rem;
+    }
+    .chart-wrap-full { grid-column: 1 / -1; }
+    @media (max-width: 680px) { .charts { grid-template-columns: 1fr; } }
+    .chart-box {
+      background: var(--bg-3);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem;
+    }
+    .chart-box h3 {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 0.75rem;
+    }
+    .chart-wrap { position: relative; height: 240px; }
+
+    /* ── STATES ──────────────────────────────────────────── */
+    .loading {
+      font-size: 0.8rem;
+      color: var(--text-3);
+      letter-spacing: 0.05em;
+      padding: 0.5rem 0;
+    }
+    .empty {
+      font-size: 0.82rem;
+      color: var(--text-3);
+      font-style: italic;
+      padding: 0.5rem 0;
+    }
+
+    a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+    a:hover { color: var(--text-3); }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <header class="page-header">
+      <div class="page-header-left">
+        <h1>IPL Resource Model</h1>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+        <span class="icon" id="theme-icon">☀</span>
+        <span id="theme-label">Light</span>
+      </button>
+    </header>
+
+    <section aria-labelledby="prediction-heading">
+      <h2 id="prediction-heading">Live Score Predictor</h2>
+      <div class="live-predictor-grid">
+        <div class="input-group">
+          <label for="live-runs">Runs</label>
+          <input type="number" id="live-runs" min="0" max="400" value="120" />
+        </div>
+        <div class="input-group">
+          <label for="live-wickets">Wickets lost (0–10)</label>
+          <input type="number" id="live-wickets" min="0" max="10" value="3" />
+        </div>
+        <div class="input-group input-group-overs">
+          <label for="live-overs">Overs bowled</label>
+          <input type="text" id="live-overs" inputmode="decimal" autocomplete="off" placeholder="e.g. 12 or 12.3" value="12" />
+          <p class="live-overs-hint" id="live-overs-hint" aria-live="polite"></p>
+        </div>
+        <div class="prediction-result">
+          <div class="prediction-value" id="live-prediction-val">—</div>
+          <div class="prediction-label">Predicted Final Score</div>
+          <div class="prediction-label live-rr-eff-detail" id="live-rr-eff-detail" aria-live="polite"></div>
+        </div>
+      </div>
+      <p class="live-rr-shrink-note" id="live-rr-shrink-note"></p>
+    </section>
+
+    <section aria-labelledby="live-ipl-heading">
+      <h2 id="live-ipl-heading">Live IPL Matches</h2>
+      <p class="subtitle">Auto-fetched from CricketData. Click a card to load live runs/wickets/overs into the predictor.</p>
+      <p class="loading" id="live-matches-loading">Loading…</p>
+      <div class="live-match-list" id="live-match-list"></div>
+    </section>
+
+    <section aria-labelledby="recent-heading">
+      <h2 id="recent-heading">Recent IPL matches — model vs actual</h2>
+      <div class="control-row">
+        <label for="days-select">Period</label>
+        <select id="days-select">
+          <option value="365">Last season</option>
+          <option value="730">Last 2 seasons</option>
+          <option value="1460">Last 4 seasons</option>
+          <option value="9999" selected>All time (2023–present)</option>
+        </select>
+      </div>
+      <div class="equation-block" aria-label="Model equation">
+        <div class="eq-main">Predicted = current_score + RR<sub>eff</sub> × C<sub>k</sub> × (1−e<sup>−b<sub>k</sub>×overs_remaining</sup>) × e<sup>−a<sub>k</sub>×W<sub>lost</sub><sup>γ</sup></sup></div>
+        <div class="eq-sub">RR<sub>eff</sub> = α<sub>k</sub> × (runs ÷ overs) + (1−α<sub>k</sub>) × μ̄<sub>k</sub> · k = phase (1–6, 7–16, 17–20), with smooth blending near over 6 and 16</div>
+      </div>
+      <div class="keypad-section" id="keypad-section" style="display: none;">
+        <div class="keypad-phase" data-phase="0">
+          <span class="keypad-phase-label">Overs 1–6</span>
+          <span class="keypad-label">Z₀</span>
+          <span class="keypad-val" id="keypad-z0-0">—</span>
+          <button type="button" class="keypad-btn" id="keypad-z0-minus-0" aria-label="Decrease Z0 phase 1">−</button>
+          <button type="button" class="keypad-btn" id="keypad-z0-plus-0" aria-label="Increase Z0 phase 1">+</button>
+          <span class="keypad-label">a</span>
+          <span class="keypad-val" id="keypad-a-0">—</span>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-0" aria-label="Decrease a phase 1">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-0" aria-label="Increase a phase 1">+</button>
+        </div>
+        <div class="keypad-phase" data-phase="1">
+          <span class="keypad-phase-label">Overs 7–16</span>
+          <span class="keypad-label">Z₀</span>
+          <span class="keypad-val" id="keypad-z0-1">—</span>
+          <button type="button" class="keypad-btn" id="keypad-z0-minus-1">−</button>
+          <button type="button" class="keypad-btn" id="keypad-z0-plus-1">+</button>
+          <span class="keypad-label">a</span>
+          <span class="keypad-val" id="keypad-a-1">—</span>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-1">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-1">+</button>
+        </div>
+        <div class="keypad-phase" data-phase="2">
+          <span class="keypad-phase-label">Overs 17–20</span>
+          <span class="keypad-label">Z₀</span>
+          <span class="keypad-val" id="keypad-z0-2">—</span>
+          <button type="button" class="keypad-btn" id="keypad-z0-minus-2">−</button>
+          <button type="button" class="keypad-btn" id="keypad-z0-plus-2">+</button>
+          <span class="keypad-label">a</span>
+          <span class="keypad-val" id="keypad-a-2">—</span>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-2">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-2">+</button>
+        </div>
+        <span class="simulated-stat" id="simulated-mae">Simulated MAE: —</span>
+        <span class="simulated-stat" id="simulated-rmse">Simulated RMSE: —</span>
+        <button type="button" class="keypad-reset" id="keypad-reset">Reset to model</button>
+        <p class="keypad-hint">Adjust each segment with +/−; charts update (no typing).</p>
+      </div>
+      <div class="summary" id="recent-summary"></div>
+      <div class="charts" id="recent-charts" style="display: none;">
+        <div class="chart-box">
+          <h3>Predicted vs actual final score</h3>
+          <div class="chart-wrap"><canvas id="chart-pred-actual"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <h3>Prediction error distribution (runs)</h3>
+          <div class="chart-wrap"><canvas id="chart-error-dist"></canvas></div>
+        </div>
+        <div class="chart-box chart-wrap-full">
+          <h3>Resource model — exponential curve</h3>
+          <div class="chart-wrap"><canvas id="chart-resource-curve"></canvas></div>
+        </div>
+      </div>
+      <div class="table-scroll" id="recent-table-wrap"></div>
+      <p class="loading" id="recent-loading">Loading…</p>
+    </section>
+
+  </div>
+
+  <script>
+    /* ── THEME TOGGLE ──────────────────────────────────── */
+    const html = document.documentElement;
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeLabel = document.getElementById('theme-label');
+
+    function getTheme() { return html.getAttribute('data-theme'); }
+    function setTheme(t) {
+      html.setAttribute('data-theme', t);
+      if (t === 'dark') { themeIcon.textContent = '☀'; themeLabel.textContent = 'Light'; }
+      else              { themeIcon.textContent = '☽'; themeLabel.textContent = 'Dark';  }
+      if (lastRawResults.length) applyKeypadParams();
+    }
+    themeToggle.addEventListener('click', () => setTheme(getTheme() === 'dark' ? 'light' : 'dark'));
+
+    /* ── CHART HELPERS ─────────────────────────────────── */
+    function chartColors() {
+      const dark = getTheme() === 'dark';
+      return {
+        text:    dark ? '#737373' : '#737373',
+        grid:    dark ? 'rgba(42,42,42,0.7)' : 'rgba(212,212,212,0.7)',
+        accent:  dark ? '#fafafa' : '#0a0a0a',
+        blue:    dark ? '#fafafa' : '#0a0a0a',
+        green:   dark ? '#4ade80' : '#16a34a',
+        amber:   dark ? '#fbbf24' : '#b45309',
+        red:     dark ? '#f87171' : '#dc2626',
+        purple:  dark ? '#c084fc' : '#7c3aed',
+        cyan:    dark ? '#67e8f9' : '#0891b2',
+      };
+    }
+
+    /* ── ALL LOGIC UNCHANGED FROM ORIGINAL ────────────── */
+    let chartPredActual = null;
+    let chartErrorDist = null;
+    let chartResourceCurve = null;
+    let lastRawResults = [];
+    let lastModelParams = null;
+    /** @type {(number|null)[]} override per phase for Z0 and a */
+    let keypadZ0 = [null, null, null];
+    let keypadA = [null, null, null];
+    const Z0_MIN = 1.0, Z0_MAX = 2.5, Z0_STEP = 0.05;
+    const A_MIN = 0.0, A_MAX = 0.25, A_STEP = 0.005;
+
+    const DEFAULT_RR_SHRINK = {
+      alpha_by_phase: [0.129668, 0.374227, 0.64401],
+      mu_by_phase: [7.916135, 8.506491, 8.66626],
+    };
+
+    function getRRShrink() {
+      const s = lastModelParams && lastModelParams.rr_shrinkage;
+      if (
+        s &&
+        Array.isArray(s.alpha_by_phase) &&
+        s.alpha_by_phase.length === 3 &&
+        Array.isArray(s.mu_by_phase) &&
+        s.mu_by_phase.length === 3
+      ) {
+        return { alphaByPhase: s.alpha_by_phase.map(Number), muByPhase: s.mu_by_phase.map(Number) };
+      }
+      return {
+        alphaByPhase: DEFAULT_RR_SHRINK.alpha_by_phase.slice(),
+        muByPhase: DEFAULT_RR_SHRINK.mu_by_phase.slice(),
+      };
+    }
+
+    function powerplayPhase(oversCompleted) {
+      const oc = Number(oversCompleted);
+      if (oc <= 6) return 0;
+      if (oc <= 16) return 1;
+      return 2;
+    }
+
+    function effectiveRunRateClient(runRate, oversCompleted) {
+      const k = powerplayPhase(oversCompleted);
+      const { alphaByPhase, muByPhase } = getRRShrink();
+      const alpha = alphaByPhase[k];
+      const mu = muByPhase[k];
+      return alpha * Number(runRate) + (1 - alpha) * mu;
+    }
+
+    function refreshRRShrinkNote() {
+      const el = document.getElementById('live-rr-shrink-note');
+      if (!el) return;
+      const { alphaByPhase } = getRRShrink();
+      const labs = ['overs 1–6', '7–16', '17–20'];
+      el.textContent =
+        'Run rate uses per-segment shrink (same bands as Z₀): RR_eff = α_k×observed + (1−α_k)×μ̄_k. ' +
+        'Fitted α ≈ ' +
+        alphaByPhase.map((a, i) => labs[i] + ' ' + a.toFixed(3)).join(', ') +
+        ' (2023+ IPL, fit_rr_shrinkage.py).';
+    }
+
+    function getPhaseParams(phaseIdx) {
+      const phases = (lastModelParams && lastModelParams.phases) || [];
+      const base = phases[phaseIdx] || { Z0: 1.5, a: 0.05 };
+      const Z0 = keypadZ0[phaseIdx] != null ? keypadZ0[phaseIdx] : base.Z0;
+      const a = keypadA[phaseIdx] != null ? keypadA[phaseIdx] : base.a;
+      return { Z0, a };
+    }
+
+    function getResourceModelParams() {
+      const m = lastModelParams && lastModelParams.resource_model;
+      if (m && Array.isArray(m.phases) && m.phases.length === 3) {
+        return {
+          phases: m.phases,
+          wicketGamma: Number(m.wicket_gamma || 2.5),
+          phaseBlendOvers: Number(m.phase_blend_overs || 0.5),
+        };
+      }
+      return {
+        phases: [
+          { C: 35.183517, b: 0.050941, a_w: 0.010875 },
+          { C: 29.6944, b: 0.054326, a_w: 0.003438 },
+          { C: 45.666991, b: 0.040952, a_w: 0.00194 },
+        ],
+        wicketGamma: 2.499963,
+        phaseBlendOvers: 0.5,
+      };
+    }
+
+    function resourceForPhaseClient(phaseIdx, oversRem, wicketsRem, model) {
+      const p = model.phases[phaseIdx] || {};
+      const C = Number(p.C || 0);
+      const b = Number(p.b || 0);
+      const aW = Number(p.a_w || 0);
+      const oversR = Math.max(0, Number(oversRem));
+      const wicketsLost = Math.max(0, 10 - Number(wicketsRem));
+      return C * (1 - Math.exp(-b * oversR)) * Math.exp(-aW * Math.pow(wicketsLost, model.wicketGamma));
+    }
+
+    function resourceFactorClient(oversRem, wicketsRem, oversCompleted) {
+      const model = getResourceModelParams();
+      const oc = Number(oversCompleted);
+      const d = model.phaseBlendOvers;
+      if (oc <= 6 - d) return resourceForPhaseClient(0, oversRem, wicketsRem, model);
+      if (oc >= 6 + d && oc <= 16 - d) return resourceForPhaseClient(1, oversRem, wicketsRem, model);
+      if (oc >= 16 + d) return resourceForPhaseClient(2, oversRem, wicketsRem, model);
+
+      if (oc > 6 - d && oc < 6 + d) {
+        const t = (oc - (6 - d)) / (2 * d);
+        const r0 = resourceForPhaseClient(0, oversRem, wicketsRem, model);
+        const r1 = resourceForPhaseClient(1, oversRem, wicketsRem, model);
+        return (1 - t) * r0 + t * r1;
+      }
+      const t = (oc - (16 - d)) / (2 * d);
+      const r1 = resourceForPhaseClient(1, oversRem, wicketsRem, model);
+      const r2 = resourceForPhaseClient(2, oversRem, wicketsRem, model);
+      return (1 - t) * r1 + t * r2;
+    }
+
+    function predictScoreClient(currentScore, runRate, oversRem, wicketsLost, oversCompleted) {
+      const wicketsRem = 10 - wicketsLost;
+      const rrEff = effectiveRunRateClient(runRate, oversCompleted);
+      const resource = resourceFactorClient(oversRem, wicketsRem, oversCompleted);
+      return currentScore + rrEff * resource;
+    }
+
+    function resourcePercent(oversRem, wicketsRem, Z0, a, maxOvers, maxWickets) {
+      const oc = maxOvers - oversRem;
+      const resource = resourceFactorClient(oversRem, wicketsRem, oc);
+      const baseline = resourceFactorClient(maxOvers, maxWickets, 0);
+      return baseline > 0 ? (100 * resource) / baseline : 0;
+    }
+
+    function errorClass(err) {
+      if (err < 10) return 'error-low';
+      if (err <= 25) return 'error-mid';
+      return 'error-high';
+    }
+
+    function applyKeypadParams() {
+      if (!lastRawResults.length || !lastModelParams) return;
+      for (let i = 0; i < 3; i++) {
+        const { Z0, a } = getPhaseParams(i);
+        document.getElementById('keypad-z0-' + i).textContent = Z0.toFixed(4);
+        document.getElementById('keypad-a-' + i).textContent = a.toFixed(4);
+        document.getElementById('keypad-z0-minus-' + i).disabled = Z0 <= Z0_MIN;
+        document.getElementById('keypad-z0-plus-' + i).disabled = Z0 >= Z0_MAX;
+        document.getElementById('keypad-a-minus-' + i).disabled = a <= A_MIN;
+        document.getElementById('keypad-a-plus-' + i).disabled = a >= A_MAX;
+      }
+      const results = lastRawResults.map(r => {
+        const oc = r.at_over != null ? r.at_over : r.overs_completed;
+        const pred = predictScoreClient(
+          r.current_score,
+          r.run_rate,
+          r.overs_remaining,
+          r.wickets_lost,
+          oc,
+        );
+        const err = Math.abs(pred - r.actual);
+        return { ...r, predicted: Math.round(pred * 10) / 10, error: Math.round(err * 10) / 10 };
+      });
+      const errors = results.map(r => r.error);
+      const mae = errors.length ? (errors.reduce((s, e) => s + e, 0) / errors.length).toFixed(2) : '—';
+      const rmse = errors.length ? Math.sqrt(errors.reduce((s, e) => s + e * e, 0) / errors.length).toFixed(2) : '—';
+      document.getElementById('simulated-mae').textContent = 'Simulated MAE: ' + mae + ' runs';
+      document.getElementById('simulated-rmse').textContent = 'Simulated RMSE: ' + rmse + ' runs';
+      drawCharts(results, lastModelParams);
+      if (typeof updateLivePrediction === 'function') updateLivePrediction();
+    }
+
+    function drawCharts(results, modelParams) {
+      const chartsEl = document.getElementById('recent-charts');
+      const hasResults = results && results.length > 0;
+      if ((!hasResults && !modelParams) || typeof Chart === 'undefined') {
+        chartsEl.style.display = 'none';
+        return;
+      }
+      chartsEl.style.display = 'grid';
+
+      const c = chartColors();
+      const actuals = (results || []).map(r => r.actual);
+      const predicted = (results || []).map(r => r.predicted);
+      const errors = (results || []).map(r => r.error);
+
+      const minVal = actuals.length ? Math.min(...actuals, ...predicted) : 0;
+      const maxVal = actuals.length ? Math.max(...actuals, ...predicted) : 200;
+      const lineMin = Math.floor(minVal / 10) * 10;
+      const lineMax = Math.ceil(maxVal / 10) * 10;
+      const perfectLine = [{ x: lineMin, y: lineMin }, { x: lineMax, y: lineMax }];
+
+      if (chartPredActual) chartPredActual.destroy();
+      if (hasResults) {
+        chartPredActual = new Chart(document.getElementById('chart-pred-actual'), {
+          type: 'scatter',
+          data: {
+            datasets: [
+              {
+                type: 'scatter',
+                label: 'Predictions',
+                data: actuals.map((a, i) => ({ x: a, y: predicted[i] })),
+                backgroundColor: getTheme() === 'dark' ? 'rgba(250,250,250,0.4)' : 'rgba(10,10,10,0.3)',
+                borderColor: c.accent,
+                borderWidth: 1,
+                pointRadius: 4,
+              },
+              {
+                type: 'line',
+                label: 'Perfect (y = x)',
+                data: perfectLine,
+                borderColor: c.red,
+                borderWidth: 1.5,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                fill: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                type: 'linear',
+                title: { display: true, text: 'Actual final score', color: c.text, font: { family: 'Sora', size: 11 } },
+                min: lineMin, max: lineMax,
+                grid: { color: c.grid },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 } },
+              },
+              y: {
+                type: 'linear',
+                title: { display: true, text: 'Predicted final score', color: c.text, font: { family: 'Sora', size: 11 } },
+                min: lineMin, max: lineMax,
+                grid: { color: c.grid },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 } },
+              },
+            },
+            plugins: { legend: { labels: { color: c.text, font: { family: 'Sora', size: 11 } } } },
+          },
+        });
+      } else {
+        if (chartPredActual) { chartPredActual.destroy(); chartPredActual = null; }
+      }
+
+      const bins = [0, 5, 10, 15, 20, 25, 30, 50, 100];
+      const counts = bins.slice(0, -1).map((_, i) => {
+        const lo = bins[i]; const hi = bins[i + 1];
+        return errors.filter(e => e >= lo && e < hi).length;
+      });
+      const labels = bins.slice(0, -1).map((_, i) => bins[i] + '–' + bins[i + 1]);
+
+      if (chartErrorDist) chartErrorDist.destroy();
+      if (hasResults) {
+        chartErrorDist = new Chart(document.getElementById('chart-error-dist'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Number of predictions',
+              data: counts,
+              backgroundColor: getTheme() === 'dark' ? 'rgba(250,250,250,0.15)' : 'rgba(10,10,10,0.12)',
+              borderColor: c.accent,
+              borderWidth: 1.5,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                title: { display: true, text: 'Absolute error (runs)', color: c.text, font: { family: 'Sora', size: 11 } },
+                grid: { display: false },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 } },
+              },
+              y: {
+                title: { display: true, text: 'Count', color: c.text, font: { family: 'Sora', size: 11 } },
+                grid: { color: c.grid },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 }, beginAtZero: true },
+              },
+            },
+            plugins: { legend: { display: false } },
+          },
+        });
+      } else {
+        if (chartErrorDist) { chartErrorDist.destroy(); chartErrorDist = null; }
+      }
+
+      if (modelParams && modelParams.phases && modelParams.phases.length === 3) {
+        const maxOvers = modelParams.max_overs || 20;
+        const maxWickets = modelParams.max_wickets || 10;
+        const oversRange = [];
+        for (let o = maxOvers; o >= 1; o -= 0.5) oversRange.push(Math.round(o * 2) / 2);
+        const wicketsToShow = [10, 8, 6, 4, 2];
+        const colors = [c.accent, c.green, c.amber, c.red, c.purple];
+        const datasets = wicketsToShow.map((wRem, i) => ({
+          type: 'line',
+          label: wRem + ' wkts left',
+          data: oversRange.map(or => {
+            const oc = maxOvers - or;
+            const ph = powerplayPhase(oc);
+            const z0a = getPhaseParams(ph);
+            return { x: or, y: resourcePercent(or, wRem, z0a.Z0, z0a.a, maxOvers, maxWickets) };
+          }),
+          borderColor: colors[i],
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.15,
+        }));
+        if (chartResourceCurve) chartResourceCurve.destroy();
+        chartResourceCurve = new Chart(document.getElementById('chart-resource-curve'), {
+          type: 'line',
+          data: { datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                type: 'linear',
+                reverse: true,
+                title: { display: true, text: 'Overs remaining', color: c.text, font: { family: 'Sora', size: 11 } },
+                min: 1, max: maxOvers,
+                grid: { color: c.grid },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 }, stepSize: 2 },
+              },
+              y: {
+                type: 'linear',
+                title: { display: true, text: 'Resource %', color: c.text, font: { family: 'Sora', size: 11 } },
+                min: 0, max: 100,
+                grid: { color: c.grid },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 } },
+              },
+            },
+            plugins: {
+              legend: { labels: { color: c.text, font: { family: 'Sora', size: 11 } } },
+              tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%' } },
+            },
+          },
+        });
+      }
+    }
+
+    function renderRecent(data) {
+      document.getElementById('recent-loading').textContent = '';
+      const summary = data.summary || {};
+      const wrap = document.getElementById('recent-summary');
+      wrap.innerHTML = '';
+      if (summary.count > 0) {
+        wrap.innerHTML = [
+          `<div class="stat"><span class="stat-label">Predictions</span><span class="stat-value">${summary.count}</span></div>`,
+          `<div class="stat"><span class="stat-label">MAE</span><span class="stat-value">${summary.mae} runs</span></div>`,
+          summary.rmse != null ? `<div class="stat"><span class="stat-label">RMSE</span><span class="stat-value">${summary.rmse} runs</span></div>` : '',
+        ].join('');
+      } else if (summary.message) {
+        wrap.innerHTML = `<p class="empty">${summary.message} Try a longer period (e.g. last 365 days).</p>`;
+      }
+      const results = data.results || [];
+      lastRawResults = results;
+      lastModelParams = data.model_params || null;
+      refreshRRShrinkNote();
+      keypadZ0 = [null, null, null];
+      keypadA = [null, null, null];
+      const keypadEl = document.getElementById('keypad-section');
+      keypadEl.style.display = 'none';
+      drawCharts(results, data.model_params);
+      const tableWrap = document.getElementById('recent-table-wrap');
+      if (results.length === 0) {
+        tableWrap.innerHTML = '<p class="empty">No recent match data in this range.</p>';
+        return;
+      }
+      const headers = ['Date', 'Match', 'Innings', 'At over', 'Current', 'RR', 'Wkt', 'Predicted', 'Actual', 'Error'];
+      let html = '<table><thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+      results.forEach(r => {
+        const matchName = (r.teams && r.teams.length >= 2) ? `${r.teams[0]} v ${r.teams[1]}` : (r.innings_team || '–');
+        html += '<tr>' + [
+          r.date || '–',
+          matchName,
+          r.innings_team || '–',
+          r.at_over,
+          r.current_score,
+          r.run_rate,
+          r.wickets_lost,
+          '<span class="num">' + r.predicted + '</span>',
+          '<span class="num">' + r.actual + '</span>',
+          '<span class="num ' + errorClass(r.error) + '">' + r.error + '</span>',
+        ].map(c => `<td>${c}</td>`).join('') + '</tr>';
+      });
+      html += '</tbody></table>';
+      tableWrap.innerHTML = html;
+    }
+
+    function renderLiveMatches(data) {
+      const loading = document.getElementById('live-matches-loading');
+      const wrap = document.getElementById('live-match-list');
+      loading.textContent = '';
+      let matches = (data && data.matches) || [];
+      
+      // Team logo mapping - use official HSCICDN URLs
+      const teamLogos = {
+        'Chennai Super Kings': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313400/313421.logo.png',
+        'Delhi Capitals': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313400/313422.logo.png',
+        'Gujarat Titans': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/334700/334707.png',
+        'Kolkata Knight Riders': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313400/313419.logo.png',
+        'Lucknow Super Giants': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/415000/415032.png',
+        'Mumbai Indians': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/415000/415033.png',
+        'Punjab Kings': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/414800/414846.png',
+        'Rajasthan Royals': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/400400/400406.png',
+        'Royal Challengers Bengaluru': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/378000/378049.png',
+        'Sunrisers Hyderabad': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/414800/414845.png'
+      };
+      if (!matches.length) {
+        wrap.innerHTML = '<div class="live-match-empty">No live IPL scorecards available right now from CricketData.</div>';
+        return;
+      }
+      wrap.innerHTML = matches.map(function (m) {
+        const teams = m.teams || [];
+        const team1 = teams[0] || 'Team 1';
+        const team2 = teams[1] || 'Team 2';
+        const score = m.score || {};
+        const scoreTxt = (score.runs != null && score.wickets != null && score.overs_decimal != null)
+          ? (score.runs + '/' + score.wickets + ' (' + score.overs_decimal + ' ov)')
+          : 'Score unavailable';
+        const status = m.status || 'unknown';
+        const runs = score.runs != null ? String(score.runs) : '';
+        const wickets = score.wickets != null ? String(score.wickets) : '';
+        const overs = score.overs_input != null ? String(score.overs_input) : '';
+        
+        // Get team logos
+        const logo1 = teamLogos[team1] || '';
+        const logo2 = teamLogos[team2] || '';
+        
+        // Status badge styling
+        const statusClass = status.toLowerCase();
+        const statusText = status === 'live' ? 'LIVE' : status.toUpperCase();
+        
+        return (
+          '<article class="live-match-card">' +
+            '<div class="live-match-header">' +
+              '<div class="live-match-teams-with-logos">' +
+                '<div class="team">' +
+                  (logo1 ? '<img src="' + logo1 + '" alt="' + team1 + '" class="team-logo">' : '') +
+                  '<span class="team-name">' + team1 + '</span>' +
+                '</div>' +
+                '<div class="vs">VS</div>' +
+                '<div class="team">' +
+                  '<span class="team-name">' + team2 + '</span>' +
+                  (logo2 ? '<img src="' + logo2 + '" alt="' + team2 + '" class="team-logo">' : '') +
+                '</div>' +
+              '</div>' +
+              '<div class="live-match-badge ' + statusClass + '">' + statusText + '</div>' +
+            '</div>' +
+            '<div class="live-match-score">' + scoreTxt + '</div>' +
+            '<div class="live-match-actions">' +
+              '<button class="live-match-btn" ' +
+                'data-runs="' + runs + '" ' +
+                'data-wickets="' + wickets + '" ' +
+                'data-overs="' + overs + '">' +
+                'Use for prediction' +
+              '</button>' +
+            '</div>' +
+          '</article>'
+        );
+      }).join('');
+    }
+
+    function loadLiveMatches() {
+      const loading = document.getElementById('live-matches-loading');
+      loading.textContent = 'Loading…';
+      fetch('/api/live')
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(renderLiveMatches)
+        .catch(function () {
+          loading.textContent = 'Could not load live IPL data from /api/live.';
+          document.getElementById('live-match-list').innerHTML = '';
+        });
+    }
+
+    function loadRecent() {
+      const days = document.getElementById('days-select').value || 30;
+      const loading = document.getElementById('recent-loading');
+      loading.textContent = 'Loading…';
+      fetch('/api/recent?days=' + days)
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(renderRecent)
+        .catch(function () {
+          loading.textContent =
+            'Could not load /api/recent. For local dev run: python app.py (port 5050). On Vercel, ensure CSV and ipl_male_json are deployed.';
+        });
+    }
+
+    document.getElementById('days-select').addEventListener('change', loadRecent);
+    document.getElementById('live-match-list').addEventListener('click', function (e) {
+      const btn = e.target.closest('.live-match-btn');
+      if (!btn) return;
+      const runs = btn.getAttribute('data-runs');
+      const wickets = btn.getAttribute('data-wickets');
+      const overs = btn.getAttribute('data-overs');
+      if (runs != null) document.getElementById('live-runs').value = runs;
+      if (wickets != null) document.getElementById('live-wickets').value = wickets;
+      if (overs != null) document.getElementById('live-overs').value = overs;
+      updateLivePrediction();
+      const pred = document.getElementById('prediction-heading');
+      if (pred && pred.scrollIntoView) pred.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    for (let i = 0; i < 3; i++) {
+      const idx = i;
+      document.getElementById('keypad-z0-minus-' + idx).addEventListener('click', function() {
+        const { Z0 } = getPhaseParams(idx);
+        keypadZ0[idx] = Math.max(Z0_MIN, Z0 - Z0_STEP);
+        applyKeypadParams();
+      });
+      document.getElementById('keypad-z0-plus-' + idx).addEventListener('click', function() {
+        const { Z0 } = getPhaseParams(idx);
+        keypadZ0[idx] = Math.min(Z0_MAX, Z0 + Z0_STEP);
+        applyKeypadParams();
+      });
+      document.getElementById('keypad-a-minus-' + idx).addEventListener('click', function() {
+        const { a } = getPhaseParams(idx);
+        keypadA[idx] = Math.max(A_MIN, a - A_STEP);
+        applyKeypadParams();
+      });
+      document.getElementById('keypad-a-plus-' + idx).addEventListener('click', function() {
+        const { a } = getPhaseParams(idx);
+        keypadA[idx] = Math.min(A_MAX, a + A_STEP);
+        applyKeypadParams();
+      });
+    }
+    document.getElementById('keypad-reset').addEventListener('click', function() {
+      keypadZ0 = [null, null, null];
+      keypadA = [null, null, null];
+      applyKeypadParams();
+    });
+
+    /**
+     * Cricket overs: whole overs + optional single ball digit 0–6 (.6 = complete over → carry).
+     * No .7–.9; no multi-digit fraction.
+     */
+    function parseCricketOversInput(str) {
+      const t = String(str).trim();
+      if (t === '') return { ok: false, reason: 'empty' };
+      const parts = t.split('.');
+      if (parts.length > 2) {
+        return { ok: false, reason: 'Use at most one decimal point' };
+      }
+      const wholeStr = parts[0];
+      let whole;
+      if (wholeStr === '') {
+        whole = 0;
+      } else {
+        whole = parseInt(wholeStr, 10);
+        if (isNaN(whole) || whole < 0 || whole > 20) {
+          return { ok: false, reason: 'Whole overs must be between 0 and 20' };
+        }
+      }
+      if (parts.length === 1) {
+        return { ok: true, oversCompleted: whole, inputDisplay: String(whole) };
+      }
+      const frac = parts[1];
+      if (frac.length === 0) {
+        return { ok: true, oversCompleted: whole, inputDisplay: String(whole) };
+      }
+      if (frac.length > 1) {
+        return { ok: false, reason: 'Only one digit after the dot (balls 0–6)' };
+      }
+      const b = parseInt(frac[0], 10);
+      if (isNaN(b)) return { ok: false, reason: 'Invalid ball digit' };
+      if (b > 6) {
+        return { ok: false, reason: 'Ball digit must be 0–6 (.7–.9 are not valid)' };
+      }
+      if (b === 0) {
+        return { ok: true, oversCompleted: whole, inputDisplay: String(whole) };
+      }
+      if (b === 6) {
+        const next = whole + 1;
+        if (next > 20) return { ok: false, reason: 'Cannot exceed 20 overs' };
+        return { ok: true, oversCompleted: next, inputDisplay: String(next) };
+      }
+      const oc = whole + b / 6;
+      if (oc > 20) return { ok: false, reason: 'Cannot exceed 20 overs' };
+      return { ok: true, oversCompleted: oc, inputDisplay: whole + '.' + b };
+    }
+
+    function updateLivePrediction() {
+      const effDetail = document.getElementById('live-rr-eff-detail');
+      const setEff = (t) => { if (effDetail) effDetail.textContent = t || ''; };
+
+      const hint = document.getElementById('live-overs-hint');
+      const oversEl = document.getElementById('live-overs');
+      oversEl.classList.remove('input-invalid');
+      hint.textContent = '';
+      hint.classList.remove('invalid');
+
+      const runs = parseInt(document.getElementById('live-runs').value, 10);
+      if (runs !== runs) {
+        document.getElementById('live-prediction-val').textContent = '—';
+        setEff('');
+        return;
+      }
+      const wEl = document.getElementById('live-wickets');
+      const wRaw = wEl.value.trim();
+      if (wRaw === '') {
+        document.getElementById('live-prediction-val').textContent = '—';
+        setEff('');
+        return;
+      }
+      let wickets = parseInt(wRaw, 10);
+      if (isNaN(wickets)) {
+        document.getElementById('live-prediction-val').textContent = '—';
+        setEff('');
+        return;
+      }
+      wickets = Math.min(10, Math.max(0, wickets));
+      if (String(wickets) !== wRaw) wEl.value = String(wickets);
+
+      const parsed = parseCricketOversInput(oversEl.value.trim());
+      if (!parsed.ok) {
+        document.getElementById('live-prediction-val').textContent = '—';
+        setEff('');
+        if (parsed.reason !== 'empty') {
+          hint.textContent = parsed.reason;
+          hint.classList.add('invalid');
+          oversEl.classList.add('input-invalid');
+        }
+        return;
+      }
+
+      const oversCompleted = parsed.oversCompleted;
+      if (wickets >= 10 || oversCompleted >= 20) {
+        document.getElementById('live-prediction-val').textContent = runs;
+        setEff('');
+        return;
+      }
+
+      const observedRR = oversCompleted > 0 ? runs / oversCompleted : 8.0;
+      const rrEff = effectiveRunRateClient(observedRR, oversCompleted);
+      const oversRem = Math.max(0, 20 - oversCompleted);
+      const pred = predictScoreClient(runs, observedRR, oversRem, wickets, oversCompleted);
+      document.getElementById('live-prediction-val').textContent = Math.round(pred);
+      const ph = powerplayPhase(oversCompleted);
+      const phLabs = ['1–6', '7–16', '17–20'];
+      const { alphaByPhase } = getRRShrink();
+      setEff(
+        'Observed RR ' +
+          observedRR.toFixed(2) +
+          ' → effective RR ' +
+          rrEff.toFixed(2) +
+          ' (segment ' +
+          phLabs[ph] +
+          ', α=' +
+          alphaByPhase[ph].toFixed(3) +
+          ')',
+      );
+    }
+
+    document.getElementById('live-runs').addEventListener('input', updateLivePrediction);
+    document.getElementById('live-wickets').addEventListener('input', function () {
+      let v = parseInt(this.value, 10);
+      if (!isNaN(v)) {
+        if (v > 10) this.value = '10';
+        if (v < 0) this.value = '0';
+      }
+      updateLivePrediction();
+    });
+    document.getElementById('live-overs').addEventListener('input', updateLivePrediction);
+    document.getElementById('live-overs').addEventListener('blur', function () {
+      const p = parseCricketOversInput(this.value.trim());
+      if (p.ok) this.value = p.inputDisplay;
+      updateLivePrediction();
+    });
+
+    refreshRRShrinkNote();
+    updateLivePrediction();
+
+    loadRecent();
+    loadLiveMatches();
+    setInterval(loadLiveMatches, 60000);
+  </script>
+</body>
+</html>
