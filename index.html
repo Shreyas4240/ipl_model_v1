@@ -1564,14 +1564,19 @@
     // Map of chartId → Chart instance — destroyed on re-render
     const liveWinProbCharts = {};
 
-    // Persistent history: chartId → { team1: [{x,y},...], team2: [{x,y},...], lastBall: number }
+    // Persistent history: chartId -> { team1: [{x,y},...], team2: [{x,y},...], lastX: number }
     // Points are only ever appended, never recomputed.
     // Survives page reloads via sessionStorage (same tab session = same match day).
     var liveWinProbHistory = (function() {
       try {
         var stored = sessionStorage.getItem('liveWinProbHistory');
-        return stored ? JSON.parse(stored) : {};
-      } catch(_) { return {}; }
+        var parsed = stored ? JSON.parse(stored) : {};
+        console.log('[liveWinProbHistory] Loaded from sessionStorage:', parsed);
+        return parsed;
+      } catch(_) { 
+        console.log('[liveWinProbHistory] Failed to load, using empty object');
+        return {}; 
+      }
     })();
 
     function saveWinProbHistory() {
@@ -1617,10 +1622,13 @@
       }
 
       // Initialise history if first time seeing this match
+      console.log('[buildWinProbChart] Checking history for', canvasId, 'current history keys:', Object.keys(liveWinProbHistory));
       if (!liveWinProbHistory[canvasId]) {
+        console.log('[buildWinProbChart] Initializing history for', canvasId);
         liveWinProbHistory[canvasId] = { team1: [], team2: [], lastX: -1 };
       }
       const hist = liveWinProbHistory[canvasId];
+      console.log('[buildWinProbChart] History for', canvasId, ':', hist);
 
       // Only append if this is a new over we haven't recorded yet
       if (currentX > hist.lastX && currentX > 0) {
@@ -2096,22 +2104,26 @@
     }
 
     function loadLiveMatches() {
+      console.log('[loadLiveMatches] Starting...');
       const loading = document.getElementById('live-matches-loading');
       const btn = document.getElementById('live-refresh-btn');
-      loading.textContent = 'Loading…';
+      loading.textContent = 'Loading...';
       if (btn) { btn.disabled = true; btn.classList.add('loading'); }
 
       fetch('/api/live')
         .then(function (r) {
+          console.log('[loadLiveMatches] API response status:', r.status);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         })
         .then(function(data) {
+          console.log('[loadLiveMatches] Live matches data:', data);
           liveLastFetched = Date.now();
           tickLiveAge();
           renderLiveMatches(data);
         })
         .catch(function () {
+          console.log('[loadLiveMatches] Error fetching live matches data');
           loading.textContent = 'Could not load live IPL data.';
           document.getElementById('live-match-list').innerHTML = '';
         })
