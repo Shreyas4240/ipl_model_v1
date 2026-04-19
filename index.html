@@ -1588,8 +1588,8 @@
      * Only appends the current over's point — never rewrites history.
      */
     function buildWinProbChart(canvasId, inn1, inn2, abbr1, abbr2, status, vAvg) {
-      console.log('[buildWinProbChart] Starting for', canvasId, 'inn1:', inn1, 'inn2:', inn2);
       const canvas = document.getElementById(canvasId);
+      console.log('[buildWinProbChart] Canvas found:', !!canvas, 'Chart available:', typeof Chart !== 'undefined');
       if (!canvas) {
         console.error('[buildWinProbChart] Canvas not found:', canvasId);
         return;
@@ -1598,6 +1598,12 @@
         console.error('[buildWinProbChart] Chart not available');
         return;
       }
+      
+      // Check canvas visibility
+      const rect = canvas.getBoundingClientRect();
+      console.log('[buildWinProbChart] Canvas rect:', rect);
+      console.log('[buildWinProbChart] Canvas visible:', rect.width > 0 && rect.height > 0);
+      console.log('[buildWinProbChart] Canvas style:', window.getComputedStyle(canvas));
 
       const target = inn1.runs + 1;
       const dark = getTheme() === 'dark';
