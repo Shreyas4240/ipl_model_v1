@@ -929,6 +929,24 @@
       <div class="live-match-list" id="live-match-list"></div>
     </section>
 
+    <section aria-labelledby="mivpbks-heading">
+      <h2 id="mivpbks-heading">Win probability — MI vs PBKS, Match 24 (Apr 16 2026)</h2>
+      <div class="match-winprob-meta">
+        <span class="match-winprob-teams">
+          <span class="match-winprob-team-dot" style="background:var(--text-2)"></span>
+          MI batted first · 195/6
+        </span>
+        <span class="match-winprob-teams">
+          <span class="match-winprob-team-dot" style="background:var(--green)"></span>
+          PBKS chased 196 · won by 7 wkts
+        </span>
+        <span class="match-winprob-note">model-based · ball-by-ball · not a market probability</span>
+      </div>
+      <div class="match-winprob-chart-wrap">
+        <canvas id="chart-mivpbks"></canvas>
+      </div>
+    </section>
+
     <section aria-labelledby="recent-heading">
       <h2 id="recent-heading">Recent IPL matches — model vs actual</h2>
       <div class="control-row">
@@ -1519,111 +1537,131 @@
 
     /**
      * Win probability for the team batting first, at a given 1st innings snapshot.
-     * P(their final total > venueAvg) — uses venue-specific average if provided.
+     * Uses a dynamic midpoint threshold so the line stays responsive even when
+     * the team is well ahead — avoids saturating at the cap.
      */
     function inn1WinProb(currentScore, wicketsLost, oversCompleted, venueAvg) {
       const avg = venueAvg || IPL_AVG_TOTAL;
       const oc = Number(oversCompleted);
       if (oc <= 0) return 0.5;
       const oversRem = Math.max(0, 20 - oc);
-      if (oversRem <= 0) return currentScore > avg ? 0.75 : 0.35;
+      if (oversRem <= 0) {
+        const z = (avg - currentScore) / 15;
+        return Math.min(0.99, Math.max(0.01, 1 - normalCDF(z)));
+      }
       const rr = currentScore / oc;
       const pred = predictScoreClient(currentScore, rr, oversRem, wicketsLost, oc);
-      const sigma = winProbSigma(oc);
-      const z = (avg - pred) / sigma;
+      const s = winProbSigma(oc);
+      // Dynamic threshold: midpoint between venue avg and predicted score.
+      // When pred >> avg the threshold rises with pred, keeping z near 0
+      // and the probability responsive to changes rather than pinned at 95%.
+      const threshold = (avg + pred) / 2;
+      const z = (threshold - pred) / s;
       const p = 1 - normalCDF(z);
-      return Math.min(0.85, Math.max(0.15, p));
+      return Math.min(0.99, Math.max(0.01, p));
     }
 
     // Map of chartId → Chart instance — destroyed on re-render
     const liveWinProbCharts = {};
 
+    // Persistent history: chartId → { team1: [{x,y},...], team2: [{x,y},...], lastBall: number }
+    // Points are only ever appended, never recomputed.
+    // Survives page reloads via sessionStorage (same tab session = same match day).
+    var liveWinProbHistory = (function() {
+      try {
+        var stored = sessionStorage.getItem('liveWinProbHistory');
+        return stored ? JSON.parse(stored) : {};
+      } catch(_) { return {}; }
+    })();
+
+    function saveWinProbHistory() {
+      try { sessionStorage.setItem('liveWinProbHistory', JSON.stringify(liveWinProbHistory)); } catch(_) {}
+    }
+
     /**
-     * Build the win-probability series for a match and render a Chart.js line.
-     * inn1: {runs, wickets, overs}  — first batting team's current/final snapshot
-     * inn2: {runs, wickets, overs}  — chasing team's snapshot (null if not started)
-     * target: inn1.runs + 1
-     * status: 'live' | 'completed'
+     * Update (or create) the win-probability chart for a live match.
+     * Only appends the current over's point — never rewrites history.
      */
     function buildWinProbChart(canvasId, inn1, inn2, abbr1, abbr2, status, vAvg) {
       const canvas = document.getElementById(canvasId);
       if (!canvas || typeof Chart === 'undefined') return;
 
-      // Destroy previous instance if re-rendering
-      if (liveWinProbCharts[canvasId]) {
-        liveWinProbCharts[canvasId].destroy();
-        delete liveWinProbCharts[canvasId];
-      }
-
-      const c = chartColors();
       const target = inn1.runs + 1;
-
-      // ── 1st innings points (overs 1–20) ──────────────────
-      // Reconstruct trajectory by interpolating linearly to the known snapshot.
-      // P(bat team wins) from inn1 model; P(field team wins) = 1 - that. Always sums to 100.
-      const inn1OC = Math.floor(parseFloat(inn1.overs || '20')) || 20;
-      const inn1Points = [];   // batting team (team1)
-      const inn1PointsOpp = []; // fielding team (team2) = complement
-
-      for (let oc = 1; oc <= inn1OC; oc++) {
-        const frac = oc / inn1OC;
-        const estScore = Math.round(inn1.runs * frac);
-        const estWkts  = Math.round((inn1.wickets != null ? inn1.wickets : 5) * frac);
-        const p = inn1WinProb(estScore, estWkts, oc, vAvg);
-        inn1Points.push({ x: oc, y: Math.round(p * 100) });
-        inn1PointsOpp.push({ x: oc, y: Math.round((1 - p) * 100) });
-      }
-
-      // ── 2nd innings points (overs 21–40) ─────────────────
-      const inn2Points = [];
-      const inn2PointsOpp = [];
-      if (inn2 && inn2.overs != null) {
-        const inn2OC = Math.floor(parseFloat(inn2.overs)) || 0;
-        for (let oc = 1; oc <= inn2OC; oc++) {
-          const frac = oc / Math.max(inn2OC, 1);
-          const estScore = Math.round(inn2.runs * frac);
-          const estWkts  = Math.round((inn2.wickets != null ? inn2.wickets : 0) * frac);
-          const p = chaseWinProb(estScore, estWkts, oc, target);
-          inn2Points.push({ x: 20 + oc, y: Math.round(p * 100) });
-          inn2PointsOpp.push({ x: 20 + oc, y: Math.round((1 - p) * 100) });
-        }
-      }
-
-      // Merge: team1 line = inn1Points + inn2PointsOpp (defending in inn2)
-      //        team2 line = inn1PointsOpp + inn2Points (chasing in inn2)
-      const team1Data = inn1Points.concat(inn2PointsOpp);
-      const team2Data = inn1PointsOpp.concat(inn2Points);
-
-      // Current over marker
-      const currentX = inn2 && inn2.overs != null
-        ? 20 + Math.floor(parseFloat(inn2.overs))
-        : inn1OC;
-
       const dark = getTheme() === 'dark';
+      const c = chartColors();
       const color1 = dark ? 'rgba(250,250,250,0.7)' : 'rgba(10,10,10,0.6)';
       const color2 = dark ? '#4ade80' : '#16a34a';
 
-      liveWinProbCharts[canvasId] = new Chart(canvas, {
+      // Determine the current over (integer, end-of-over)
+      var currentX, curP1, curP2;
+      if (inn2 && inn2.overs != null) {
+        const oc2 = Math.floor(parseFloat(inn2.overs)) || 0;
+        currentX = 20 + oc2;
+        const p2 = chaseWinProb(inn2.runs, inn2.wickets != null ? inn2.wickets : 0, oc2, target);
+        curP2 = Math.round(p2 * 100);
+        curP1 = 100 - curP2;
+      } else {
+        const oc1 = Math.floor(parseFloat(inn1.overs || '0')) || 0;
+        currentX = oc1;
+        const p1 = inn1WinProb(inn1.runs, inn1.wickets != null ? inn1.wickets : 0, oc1, vAvg);
+        curP1 = Math.round(p1 * 100);
+        curP2 = 100 - curP1;
+      }
+
+      // Initialise history if first time seeing this match
+      if (!liveWinProbHistory[canvasId]) {
+        liveWinProbHistory[canvasId] = { team1: [], team2: [], lastX: -1 };
+      }
+      const hist = liveWinProbHistory[canvasId];
+
+      // Only append if this is a new over we haven't recorded yet
+      if (currentX > hist.lastX && currentX > 0) {
+        hist.team1.push({ x: currentX, y: curP1 });
+        hist.team2.push({ x: currentX, y: curP2 });
+        hist.lastX = currentX;
+      }
+
+      // If chart already exists AND its canvas is still in the DOM, just update data.
+      // Must check that the chart's canvas element is the SAME node (not a recreated one).
+      const existingChart = liveWinProbCharts[canvasId];
+      if (existingChart && existingChart.canvas === canvas) {
+        existingChart.data.datasets[0].data = hist.team1.slice();
+        existingChart.data.datasets[1].data = hist.team2.slice();
+        existingChart._currentX = currentX;
+        existingChart.update('none');
+        return;
+      }
+
+      // Canvas was recreated (innerHTML reset) or first render — destroy stale instance
+      if (existingChart) {
+        try { existingChart.destroy(); } catch(_) {}
+        delete liveWinProbCharts[canvasId];
+      }
+
+      // First render — create the chart
+      const chartInstance = new Chart(canvas, {
         type: 'line',
         data: {
           datasets: [
             {
               label: abbr1 + ' win%',
-              data: team1Data,
+              data: hist.team1.slice(),
               borderColor: color1,
               backgroundColor: 'transparent',
               borderWidth: 1.5,
               pointRadius: 0,
+              pointHoverRadius: 3,
               tension: 0.3,
               parsing: { xAxisKey: 'x', yAxisKey: 'y' },
             },
             {
               label: abbr2 + ' win%',
-              data: team2Data,
+              data: hist.team2.slice(),
               borderColor: color2,
               backgroundColor: 'transparent',
               borderWidth: 1.5,
               pointRadius: 0,
+              pointHoverRadius: 3,
               tension: 0.3,
               parsing: { xAxisKey: 'x', yAxisKey: 'y' },
             },
@@ -1645,8 +1683,6 @@
                 font: { family: 'IBM Plex Mono', size: 8 },
                 maxTicksLimit: 9,
                 callback: function(v) {
-                  // Label as "Ov N" at key overs
-                  if (v === 0) return '';
                   if (v === 6) return '6';
                   if (v === 10) return '10';
                   if (v === 16) return '16';
@@ -1668,7 +1704,7 @@
                 color: c.text,
                 font: { family: 'IBM Plex Mono', size: 8 },
                 maxTicksLimit: 3,
-                callback: function(v) { return v === 50 ? '50%' : v === 0 ? '0' : v === 100 ? '100' : ''; },
+                callback: function(v) { return v === 0 ? '0%' : v === 50 ? '50%' : v === 100 ? '100%' : ''; },
               },
             },
           },
@@ -1687,25 +1723,34 @@
               callbacks: {
                 title: function(items) {
                   const x = items[0].parsed.x;
-                  return x > 20 ? 'Inn 2 ov ' + (x - 20).toFixed(1) : 'Inn 1 ov ' + x.toFixed(1);
+                  if (x === 0) return 'Start';
+                  // Snap display to nearest completed over
+                  const inn = x > 20 ? 2 : 1;
+                  const ov = inn === 2 ? (x - 20) : x;
+                  const ovInt = Math.floor(ov);
+                  const balls = Math.round((ov - ovInt) * 6);
+                  return balls > 0
+                    ? 'Inn ' + inn + ' · Ov ' + ovInt + '.' + balls
+                    : 'Inn ' + inn + ' · Ov ' + ovInt;
                 },
                 label: function(item) {
-                  return item.dataset.label + ': ' + item.parsed.y + '%';
+                  return ' ' + item.dataset.label + ': ' + item.parsed.y + '%';
                 },
               },
             },
-            // Vertical line at current over
-            annotation: undefined,
           },
         },
         plugins: [{
           id: 'currentOverLine',
           afterDraw: function(chart) {
-            const ctx = chart.ctx;
             const xScale = chart.scales.x;
             const yScale = chart.scales.y;
             if (!xScale || !yScale) return;
-            const xPx = xScale.getPixelForValue(currentX);
+            const ctx = chart.ctx;
+
+            // Current over dashed line
+            const cx = chart._currentX || currentX;
+            const xPx = xScale.getPixelForValue(cx);
             ctx.save();
             ctx.beginPath();
             ctx.moveTo(xPx, yScale.top);
@@ -1714,39 +1759,89 @@
             ctx.lineWidth = 1;
             ctx.setLineDash([3, 3]);
             ctx.stroke();
+
+            // "Data from Ov X" label at the start of the line
+            const d0 = chart.data.datasets[0].data;
+            if (d0 && d0.length > 0) {
+              const firstX = d0[0].x;
+              if (firstX > 1) {
+                const startPx = xScale.getPixelForValue(firstX);
+                ctx.setLineDash([]);
+                ctx.font = '8px IBM Plex Mono';
+                ctx.fillStyle = dark ? 'rgba(250,250,250,0.3)' : 'rgba(10,10,10,0.25)';
+                ctx.textAlign = 'left';
+                ctx.fillText('from Ov ' + firstX.toFixed(1), startPx + 3, yScale.top + 10);
+              }
+            }
             ctx.restore();
           },
         }],
       });
+      chartInstance._currentX = currentX;
+      liveWinProbCharts[canvasId] = chartInstance;
     }
 
-    // Enhanced win probability with momentum features
-    async function fetchEnhancedWinProb(runs, wickets, overs, target, venue, recentBalls) {
-      try {
-        const response = await fetch('/api/winprob-enhanced', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            runs: runs,
-            wickets: wickets,
-            overs: overs,
-            target: target,
-            venue: venue,
-            recent_balls: recentBalls || []
-          })
-        });
-        
-        if (!response.ok) {
-          console.error('Enhanced win prob API error:', response.status);
-          return null;
+    /**
+     * Update the win probability chart using real ball-by-ball data from /api/scorecard.
+     * Computes win prob for every ball and appends only new ones to the history.
+     */
+    function updateChartFromBalls(canvasId, balls, inn1, inn2, abbr1, abbr2, vAvg) {
+      if (!balls || !balls.length) return;
+      const target = inn1 ? inn1.runs + 1 : null;
+
+      if (!liveWinProbHistory[canvasId]) {
+        liveWinProbHistory[canvasId] = { team1: [], team2: [], lastBall: -1 };
+      }
+      const hist = liveWinProbHistory[canvasId];
+
+      // One point per ball — x = over decimal (e.g. 6.333 = 6 overs 2 balls)
+      var appended = false;
+      balls.forEach(function(b) {
+        if (b.ball <= hist.lastBall) return;
+
+        var p1, p2;
+        if (b.innings === 2 && target != null) {
+          var p2val = chaseWinProb(b.runs, b.wickets, b.over, target);
+          p2 = Math.round(p2val * 100);
+          p1 = 100 - p2;
+        } else {
+          var p1val = inn1WinProb(b.runs, b.wickets, b.over, vAvg);
+          p1 = Math.round(p1val * 100);
+          p2 = 100 - p1;
         }
-        
-        return await response.json();
-      } catch (err) {
-        console.error('Error fetching enhanced win prob:', err);
-        return null;
+
+        var x = b.innings === 2 ? 20 + b.over : b.over;
+        hist.team1.push({ x: parseFloat(x.toFixed(3)), y: p1 });
+        hist.team2.push({ x: parseFloat(x.toFixed(3)), y: p2 });
+        hist.lastBall = b.ball;
+        appended = true;
+      });
+
+      if (!appended) return;
+
+      saveWinProbHistory();
+      // The gap on the left makes it clear early overs aren't available.
+
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+
+      const existingChart = liveWinProbCharts[canvasId];
+      if (existingChart && existingChart.canvas === canvas) {
+        existingChart.data.datasets[0].data = hist.team1.slice();
+        existingChart.data.datasets[1].data = hist.team2.slice();
+        const lastPt = hist.team1[hist.team1.length - 1];
+        existingChart._currentX = lastPt ? lastPt.x : 0;
+        existingChart.update('none');
+      } else {
+        const lastBall = balls[balls.length - 1];
+        const fakeInn1 = inn1 || { runs: lastBall.runs, wickets: lastBall.wickets, overs: String(lastBall.over) };
+        buildWinProbChart(canvasId, fakeInn1, inn2, abbr1, abbr2, 'live', vAvg);
+        const chart = liveWinProbCharts[canvasId];
+        if (chart) {
+          chart.data.datasets[0].data = hist.team1.slice();
+          chart.data.datasets[1].data = hist.team2.slice();
+          chart.update('none');
+        }
       }
     }
 
@@ -1820,6 +1915,22 @@
       // Collect chart render jobs — must run after innerHTML is set
       const chartJobs = [];
 
+      // Clear history for matches no longer in the response
+      const activeChartIds = new Set();
+      matches.forEach(function(m) {
+        const teams = m.teams || [];
+        activeChartIds.add('wp-chart-' + (teams.join('-').replace(/\s+/g, '').toLowerCase()));
+      });
+      Object.keys(liveWinProbHistory).forEach(function(id) {
+        if (!activeChartIds.has(id)) {
+          delete liveWinProbHistory[id];
+          if (liveWinProbCharts[id]) { liveWinProbCharts[id].destroy(); delete liveWinProbCharts[id]; }
+        }
+      });
+      saveWinProbHistory();
+
+      function pClass(p) { return p >= 60 ? 'high' : p >= 40 ? 'mid' : 'low'; }
+
       wrap.innerHTML = matches.map(function(m) {
         const teams = m.teams || [];
         const team1 = teams[0] || 'Team 1';
@@ -1852,61 +1963,20 @@
           const abbr2 = teamAbbr[bat2Team] || bat2Team.split(' ').map(function(w){return w[0];}).join('');
           const vAvg = venueAvgTotal(m.venue || '');
 
-          // Compute current win probability using enhanced API
+          // Compute current win probability
           var curP1, curP2;
           if (inn2 && inn2.overs != null) {
-            // 2nd innings chase in progress - use enhanced API
-            fetchEnhancedWinProb(
-              inn2.runs || 0,
-              inn2.wickets != null ? inn2.wickets : 0,
-              parseFloat(inn2.overs) || 0,
-              inn1.runs + 1,
-              m.venue || '',
-              m.recent_balls || [] // Use scraped recent balls data
-            ).then(function(result) {
-              if (result) {
-                curP2 = result.chasing_team_win_prob;
-                curP1 = result.defending_team_win_prob;
-                
-                // Update the win probability display
-                const chartElement = document.getElementById(chartId + '-enhanced');
-                if (chartElement) {
-                  chartElement.innerHTML = `
-                    <div class="enhanced-win-prob">
-                      <div class="prob-row">
-                        <span class="team-prob">${abbr2}: ${curP2}%</span>
-                        <span class="momentum">Momentum: ${result.momentum_score}%</span>
-                        <span class="team-prob">${abbr1}: ${curP1}%</span>
-                      </div>
-                    </div>
-                  `;
-                }
-              }
-            }).catch(function(err) {
-              console.error('Enhanced win prob failed, using fallback:', err);
-              // Fallback to original calculation
-              var oc2 = parseFloat(inn2.overs) || 0;
-              var tgt = inn1.runs + 1;
-              var p2 = chaseWinProb(inn2.runs, inn2.wickets != null ? inn2.wickets : 0, oc2, tgt);
-              curP2 = Math.round(p2 * 100);
-              curP1 = 100 - curP2;
-            });
-            
-            // Initial fallback calculation
             var oc2 = parseFloat(inn2.overs) || 0;
             var tgt = inn1.runs + 1;
             var p2 = chaseWinProb(inn2.runs, inn2.wickets != null ? inn2.wickets : 0, oc2, tgt);
             curP2 = Math.round(p2 * 100);
             curP1 = 100 - curP2;
           } else {
-            // 1st innings in progress - use original calculation for now
             var oc1 = parseFloat(inn1.overs) || 0;
             var p1 = inn1WinProb(inn1.runs, inn1.wickets != null ? inn1.wickets : 0, oc1, vAvg);
             curP1 = Math.round(p1 * 100);
             curP2 = 100 - curP1;
           }
-
-          function pClass(p) { return p >= 60 ? 'high' : p >= 40 ? 'mid' : 'low'; }
 
           winProbChartHtml = (
             '<div class="win-prob-chart-wrap">' +
@@ -1932,7 +2002,7 @@
             '</div>'
           );
           // Schedule chart build after DOM is ready
-          chartJobs.push({ chartId: chartId, inn1: inn1, inn2: inn2, abbr1: abbr1, abbr2: abbr2, status: status, vAvg: vAvg });
+          chartJobs.push({ chartId: chartId, inn1: inn1, inn2: inn2, abbr1: abbr1, abbr2: abbr2, status: status, vAvg: vAvg, matchId: m.matchId || '', slug: m.slug || '' });
         }
 
         const predInn = inn2 || inn1;
@@ -1968,7 +2038,31 @@
 
       // Build charts now that canvases are in the DOM
       chartJobs.forEach(function(job) {
-        buildWinProbChart(job.chartId, job.inn1, job.inn2, job.abbr1, job.abbr2, job.status, job.vAvg);
+        // Capture canvas reference NOW — before any async work
+        var canvasAtDispatch = document.getElementById(job.chartId);
+        if (!canvasAtDispatch) return;
+
+        if (job.matchId && job.slug) {
+          fetch('/api/scorecard?matchId=' + job.matchId + '&slug=' + encodeURIComponent(job.slug))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              // Only proceed if the canvas is still the same node we captured
+              var canvasNow = document.getElementById(job.chartId);
+              if (!canvasNow || canvasNow !== canvasAtDispatch) return;
+              if (data.balls && data.balls.length) {
+                updateChartFromBalls(job.chartId, data.balls, job.inn1, job.inn2, job.abbr1, job.abbr2, job.vAvg);
+              } else {
+                buildWinProbChart(job.chartId, job.inn1, job.inn2, job.abbr1, job.abbr2, job.status, job.vAvg);
+              }
+            })
+            .catch(function() {
+              var canvasNow = document.getElementById(job.chartId);
+              if (!canvasNow || canvasNow !== canvasAtDispatch) return;
+              buildWinProbChart(job.chartId, job.inn1, job.inn2, job.abbr1, job.abbr2, job.status, job.vAvg);
+            });
+        } else {
+          buildWinProbChart(job.chartId, job.inn1, job.inn2, job.abbr1, job.abbr2, job.status, job.vAvg);
+        }
       });
     }
 
@@ -2228,6 +2322,208 @@
     loadLiveMatches();
     liveRefreshTimer = setInterval(loadLiveMatches, 60000);
     liveAgeTimer = setInterval(tickLiveAge, 5000);
+
+    /* ---- MI vs PBKS ball-by-ball win probability chart ---- */
+    setTimeout(function() {
+      console.log('[MI vs PBKS] Starting chart initialization...');
+      var canvas = document.getElementById('chart-mivpbks');
+      console.log('[MI vs PBKS] Canvas found:', !!canvas, 'Chart available:', typeof Chart !== 'undefined');
+      
+      if (!canvas) {
+        console.error('[MI vs PBKS] Canvas element not found');
+        return;
+      }
+      if (typeof Chart === 'undefined') {
+        console.error('[MI vs PBKS] Chart library not loaded');
+        console.log('[MI vs PBKS] Window.Chart:', window.Chart);
+        return;
+      }
+      
+      console.log('[MI vs PBKS] Canvas dimensions:', canvas.width, 'x', canvas.height);
+      console.log('[MI vs PBKS] Canvas style:', canvas.style.cssText);
+      console.log('[MI vs PBKS] Canvas parent:', canvas.parentElement);
+      var dark = getTheme() === 'dark';
+      var c = chartColors();
+
+      // Ball-by-ball data computed from ipl_male_json/1529267.json
+      // mi + pbks = 100 at every point. Inn1 x=0-20, Inn2 x=20-36.5
+      var inn1 = [
+        {x:0.167,mi:26.4,pbks:73.6},{x:0.333,mi:26.0,pbks:74.0},{x:0.5,mi:25.6,pbks:74.4},
+        {x:0.667,mi:25.2,pbks:74.8},{x:0.833,mi:24.8,pbks:75.2},{x:1.0,mi:26.4,pbks:73.6},
+        {x:1.167,mi:27.6,pbks:72.4},{x:1.333,mi:37.7,pbks:62.3},{x:1.5,mi:43.1,pbks:56.9},
+        {x:1.667,mi:41.1,pbks:58.9},{x:1.833,mi:39.4,pbks:60.6},{x:2.0,mi:37.9,pbks:62.1},
+        {x:2.167,mi:35.2,pbks:64.8},{x:2.333,mi:29.5,pbks:70.5},{x:2.5,mi:28.5,pbks:71.5},
+        {x:2.667,mi:29.8,pbks:70.2},{x:2.833,mi:28.8,pbks:71.2},{x:3.0,mi:29.0,pbks:71.0},
+        {x:3.167,mi:28.1,pbks:71.9},{x:3.333,mi:31.2,pbks:68.8},{x:3.5,mi:31.3,pbks:68.7},
+        {x:3.667,mi:32.3,pbks:67.7},{x:3.833,mi:32.3,pbks:67.7},{x:4.0,mi:33.3,pbks:66.7},
+        {x:4.167,mi:33.3,pbks:66.7},{x:4.333,mi:33.3,pbks:66.7},{x:4.5,mi:32.4,pbks:67.6},
+        {x:4.667,mi:35.1,pbks:64.9},{x:4.833,mi:35.1,pbks:64.9},{x:5.0,mi:35.0,pbks:65.0},
+        {x:5.167,mi:34.1,pbks:65.9},{x:5.333,mi:36.7,pbks:63.3},{x:5.5,mi:35.8,pbks:64.2},
+        {x:5.667,mi:37.1,pbks:62.9},{x:5.833,mi:40.2,pbks:59.8},{x:6.0,mi:39.0,pbks:61.0},
+        {x:6.167,mi:46.5,pbks:53.5},{x:6.333,mi:44.5,pbks:55.5},{x:6.5,mi:50.3,pbks:49.7},
+        {x:6.667,mi:55.9,pbks:44.1},{x:6.833,mi:53.9,pbks:46.1},{x:7.0,mi:53.3,pbks:46.7},
+        {x:7.167,mi:52.8,pbks:47.2},{x:7.333,mi:52.3,pbks:47.7},{x:7.5,mi:53.3,pbks:46.7},
+        {x:7.667,mi:52.8,pbks:47.2},{x:7.833,mi:52.3,pbks:47.7},{x:8.0,mi:51.8,pbks:48.2},
+        {x:8.167,mi:56.8,pbks:43.2},{x:8.333,mi:55.0,pbks:45.0},{x:8.5,mi:58.4,pbks:41.6},
+        {x:8.667,mi:57.9,pbks:42.1},{x:8.833,mi:57.4,pbks:42.6},{x:9.0,mi:56.9,pbks:43.1},
+        {x:9.167,mi:57.7,pbks:42.3},{x:9.333,mi:55.9,pbks:44.1},{x:9.5,mi:61.6,pbks:38.4},
+        {x:9.667,mi:61.0,pbks:39.0},{x:9.833,mi:60.5,pbks:39.5},{x:10.0,mi:60.0,pbks:40.0},
+        {x:10.167,mi:58.3,pbks:41.7},{x:10.333,mi:61.3,pbks:38.7},{x:10.5,mi:66.3,pbks:33.7},
+        {x:10.667,mi:65.8,pbks:34.2},{x:10.833,mi:65.2,pbks:34.8},{x:11.0,mi:64.7,pbks:35.3},
+        {x:11.167,mi:63.0,pbks:37.0},{x:11.333,mi:67.8,pbks:32.2},{x:11.5,mi:67.2,pbks:32.8},
+        {x:11.667,mi:71.6,pbks:28.4},{x:11.833,mi:71.0,pbks:29.0},{x:12.0,mi:70.4,pbks:29.6},
+        {x:12.167,mi:76.7,pbks:23.3},{x:12.333,mi:76.0,pbks:24.0},{x:12.5,mi:75.2,pbks:24.8},
+        {x:12.667,mi:75.7,pbks:24.3},{x:12.833,mi:74.9,pbks:25.1},{x:13.0,mi:74.1,pbks:25.9},
+        {x:13.167,mi:73.3,pbks:26.7},{x:13.333,mi:72.5,pbks:27.5},{x:13.5,mi:70.4,pbks:29.6},
+        {x:13.667,mi:65.4,pbks:34.6},{x:13.833,mi:64.5,pbks:35.5},{x:14.0,mi:63.7,pbks:36.3},
+        {x:14.167,mi:68.1,pbks:31.9},{x:14.333,mi:67.2,pbks:32.8},{x:14.5,mi:66.4,pbks:33.6},
+        {x:14.667,mi:64.2,pbks:35.8},{x:14.833,mi:63.2,pbks:36.8},{x:15.0,mi:62.3,pbks:37.7},
+        {x:15.167,mi:60.0,pbks:40.0},{x:15.333,mi:59.0,pbks:41.0},{x:15.5,mi:64.6,pbks:35.4},
+        {x:15.667,mi:71.9,pbks:28.1},{x:15.833,mi:72.8,pbks:27.2},{x:16.0,mi:73.5,pbks:26.5},
+        {x:16.167,mi:84.4,pbks:15.6},{x:16.333,mi:84.7,pbks:15.3},{x:16.5,mi:84.8,pbks:15.2},
+        {x:16.667,mi:83.2,pbks:16.8},{x:16.833,mi:81.5,pbks:18.5},{x:17.0,mi:83.6,pbks:16.4},
+        {x:17.167,mi:87.6,pbks:12.4},{x:17.333,mi:85.0,pbks:15.0},{x:17.5,mi:80.5,pbks:19.5},
+        {x:17.667,mi:77.1,pbks:22.9},{x:17.833,mi:75.1,pbks:24.9},{x:18.0,mi:72.9,pbks:27.1},
+        {x:18.167,mi:75.3,pbks:24.7},{x:18.333,mi:73.0,pbks:27.0},{x:18.5,mi:69.1,pbks:30.9},
+        {x:18.667,mi:65.0,pbks:35.0},{x:18.833,mi:59.3,pbks:40.7},{x:19.0,mi:55.8,pbks:44.2},
+        {x:19.167,mi:52.5,pbks:47.5},{x:19.333,mi:49.4,pbks:50.6},{x:19.5,mi:46.5,pbks:53.5},
+        {x:19.667,mi:43.7,pbks:56.3},{x:19.833,mi:41.1,pbks:58.9},{x:20.0,mi:38.6,pbks:61.4},
+      ];
+      var inn2 = [
+        // Start with continuity from inn1 - same probabilities at 20.0
+        {x:20.0,mi:38.6,pbks:61.4},
+        {x:20.167,mi:41.1,pbks:58.9},{x:20.333,mi:27.2,pbks:72.8},
+        {x:20.667,mi:37.3,pbks:62.7},{x:20.833,mi:15.4,pbks:84.6},{x:21.0,mi:12.1,pbks:87.9},
+        {x:21.167,mi:16.6,pbks:83.4},{x:21.333,mi:13.0,pbks:87.0},{x:21.5,mi:18.6,pbks:81.4},
+        {x:21.667,mi:24.2,pbks:75.8},{x:21.833,mi:29.5,pbks:70.5},{x:22.0,mi:34.5,pbks:65.5},
+        {x:22.167,mi:36.3,pbks:63.7},{x:22.333,mi:43.7,pbks:56.3},{x:22.5,mi:47.7,pbks:52.3},
+        {x:22.667,mi:51.3,pbks:48.7},{x:22.833,mi:54.6,pbks:45.4},{x:23.0,mi:57.7,pbks:42.3},
+        {x:23.167,mi:58.2,pbks:41.8},{x:23.333,mi:51.9,pbks:48.1},{x:23.5,mi:54.7,pbks:45.3},
+        {x:23.667,mi:44.3,pbks:55.7},{x:23.833,mi:47.1,pbks:52.9},{x:24.0,mi:47.7,pbks:52.3},
+        {x:24.167,mi:38.1,pbks:61.9},{x:24.333,mi:40.8,pbks:59.2},{x:24.5,mi:53.5,pbks:46.5},
+        {x:24.667,mi:48.2,pbks:51.8},{x:24.833,mi:46.8,pbks:53.2},{x:25.0,mi:47.4,pbks:52.6},
+        {x:25.167,mi:49.8,pbks:50.2},{x:25.333,mi:44.7,pbks:55.3},{x:25.5,mi:45.2,pbks:54.8},
+        {x:25.667,mi:50.0,pbks:50.0},{x:25.833,mi:54.6,pbks:45.4},{x:26.0,mi:52.2,pbks:47.8},
+        {x:26.167,mi:34.5,pbks:65.5},{x:26.333,mi:33.0,pbks:67.0},{x:26.5,mi:34.5,pbks:65.5},
+        {x:26.667,mi:35.7,pbks:64.3},{x:26.833,mi:36.8,pbks:63.2},{x:27.0,mi:40.8,pbks:59.2},
+        {x:27.167,mi:39.1,pbks:60.9},{x:27.333,mi:26.9,pbks:73.1},{x:27.5,mi:21.2,pbks:78.8},
+        {x:27.667,mi:22.2,pbks:77.8},{x:27.833,mi:25.4,pbks:74.6},{x:28.0,mi:26.4,pbks:73.6},
+        {x:28.167,mi:29.7,pbks:70.3},{x:28.333,mi:30.7,pbks:69.3},{x:28.5,mi:31.7,pbks:68.3},
+        {x:28.667,mi:32.7,pbks:67.3},{x:28.833,mi:33.7,pbks:66.3},{x:29.0,mi:34.7,pbks:65.3},
+        {x:29.167,mi:35.7,pbks:64.3},{x:29.333,mi:29.8,pbks:70.2},{x:29.5,mi:24.4,pbks:75.6},
+        {x:29.667,mi:25.4,pbks:74.6},{x:29.833,mi:24.3,pbks:75.7},{x:30.0,mi:27.3,pbks:72.7},
+        {x:30.167,mi:20.6,pbks:79.4},{x:30.333,mi:16.6,pbks:83.4},{x:30.5,mi:17.4,pbks:82.6},
+        {x:30.667,mi:11.4,pbks:88.6},{x:30.833,mi:12.1,pbks:87.9},{x:31.0,mi:12.8,pbks:87.2},
+        {x:31.167,mi:10.1,pbks:89.9},{x:31.333,mi:10.7,pbks:89.3},{x:31.5,mi:8.4,pbks:91.6},
+        {x:31.667,mi:9.0,pbks:91.0},{x:31.833,mi:9.6,pbks:90.4},{x:32.0,mi:8.4,pbks:91.6},
+        {x:32.167,mi:3.5,pbks:96.5},{x:32.333,mi:2.3,pbks:97.7},{x:32.5,mi:2.6,pbks:97.4},
+        {x:32.667,mi:1.0,pbks:99.0},{x:32.833,mi:1.1,pbks:98.9},{x:33.0,mi:1.3,pbks:98.7},
+        {x:33.167,mi:1.0,pbks:99.0},{x:33.333,mi:1.0,pbks:99.0},{x:33.5,mi:1.0,pbks:99.0},
+        {x:33.667,mi:1.0,pbks:99.0},{x:33.833,mi:1.0,pbks:99.0},{x:34.0,mi:1.0,pbks:99.0},
+        {x:34.167,mi:1.0,pbks:99.0},{x:34.333,mi:1.0,pbks:99.0},{x:34.5,mi:1.0,pbks:99.0},
+        {x:34.667,mi:1.0,pbks:99.0},{x:34.833,mi:1.0,pbks:99.0},{x:35.0,mi:1.0,pbks:99.0},
+        {x:35.167,mi:1.0,pbks:99.0},{x:35.333,mi:1.0,pbks:99.0},{x:35.5,mi:1.0,pbks:99.0},
+        {x:35.667,mi:1.0,pbks:99.0},{x:35.833,mi:1.0,pbks:99.0},{x:36.0,mi:1.0,pbks:99.0},
+        {x:36.167,mi:1.0,pbks:99.0},{x:36.333,mi:1.0,pbks:99.0},{x:36.5,mi:1.0,pbks:99.0},
+      ];
+
+      console.log('[MI vs PBKS] Data points - inn1:', inn1.length, 'inn2:', inn2.length);
+
+      var miData   = inn1.map(function(p){return {x:p.x,y:p.mi};}).concat(inn2.map(function(p){return {x:p.x,y:p.mi};}));
+      var pbksData = inn1.map(function(p){return {x:p.x,y:p.pbks};}).concat(inn2.map(function(p){return {x:p.x,y:p.pbks};}));
+
+      new Chart(canvas, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'MI win%',
+              data: miData,
+              borderColor: dark ? 'rgba(250,250,250,0.75)' : 'rgba(10,10,10,0.65)',
+              backgroundColor: 'transparent',
+              borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+            },
+            {
+              label: 'PBKS win%',
+              data: pbksData,
+              borderColor: dark ? '#4ade80' : '#16a34a',
+              backgroundColor: 'transparent',
+              borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+            },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: {
+              type: 'linear', min: 0, max: 40,
+              grid: { color: c.grid, drawTicks: false }, border: { display: false },
+              ticks: {
+                color: c.text, font: { family: 'IBM Plex Mono', size: 9 }, maxTicksLimit: 9,
+                callback: function(v) {
+                  var labels = {0:'',6:'6',10:'10',16:'16',20:'20',26:'26',30:'30',36:'36',40:'40'};
+                  return labels[v] !== undefined ? labels[v] : '';
+                },
+              },
+            },
+            y: {
+              min: 0, max: 100,
+              grid: { color: c.grid, drawTicks: false }, border: { display: false },
+              ticks: {
+                color: c.text, font: { family: 'IBM Plex Mono', size: 9 }, maxTicksLimit: 3,
+                callback: function(v) { return v===0?'0%':v===50?'50%':v===100?'100%':''; },
+              },
+            },
+          },
+          plugins: {
+            legend: {
+              display: true, position: 'top', align: 'end',
+              labels: { color: c.text, font: { family: 'Sora', size: 10 }, boxWidth: 10, boxHeight: 10, borderRadius: 2, padding: 12 },
+            },
+            tooltip: {
+              backgroundColor: dark ? '#1f1f1f' : '#fff',
+              borderColor: dark ? '#2a2a2a' : '#d4d4d4', borderWidth: 1,
+              titleColor: c.text, bodyColor: c.text,
+              titleFont: { family: 'IBM Plex Mono', size: 9 },
+              bodyFont: { family: 'IBM Plex Mono', size: 9 },
+              callbacks: {
+                title: function(items) {
+                  var x = items[0].parsed.x;
+                  var inn = x > 20 ? 2 : 1;
+                  var ov = inn===2 ? x-20 : x;
+                  var ovInt = Math.floor(ov);
+                  var balls = Math.round((ov-ovInt)*6);
+                  return balls > 0 ? 'Inn '+inn+' · Ov '+ovInt+'.'+balls : 'Inn '+inn+' · Ov '+ovInt;
+                },
+                label: function(item) { return ' '+item.dataset.label+': '+item.parsed.y.toFixed(1)+'%'; },
+              },
+            },
+          },
+        },
+        plugins: [{
+          id: 'inningsDivider',
+          afterDraw: function(chart) {
+            var xScale = chart.scales.x, yScale = chart.scales.y;
+            if (!xScale || !yScale) return;
+            var ctx = chart.ctx;
+            var xPx = xScale.getPixelForValue(20);
+            ctx.save();
+            ctx.beginPath(); ctx.moveTo(xPx, yScale.top); ctx.lineTo(xPx, yScale.bottom);
+            ctx.strokeStyle = dark ? 'rgba(250,250,250,0.2)' : 'rgba(10,10,10,0.15)';
+            ctx.lineWidth = 1; ctx.setLineDash([4,4]); ctx.stroke();
+            ctx.font = '9px IBM Plex Mono';
+            ctx.fillStyle = dark ? 'rgba(250,250,250,0.35)' : 'rgba(10,10,10,0.3)';
+            ctx.textAlign = 'right'; ctx.fillText('Inn 1', xPx-6, yScale.top+12);
+            ctx.textAlign = 'left';  ctx.fillText('Inn 2', xPx+6, yScale.top+12);
+            ctx.restore();
+          },
+        }],
+      });
+      console.log('[MI vs PBKS] Chart created successfully');
+      console.log('[MI vs PBKS] Chart data length:', chartInstance.data.datasets[0].data.length);
+      console.log('[MI vs PBKS] Chart visible:', canvas.offsetParent !== null);
+    }, 100);
 
   </script>
 </body>
