@@ -163,9 +163,19 @@ module.exports = async function handler(req, res) {
     // Calculate win probability
     const winProb = calculateWinProbability(runs, wickets, overs, target, momentumFeatures);
     
+    // Handle victory or defeat edge cases
+    let finalWinProb = winProb;
+    if (runs >= target) {
+      // Victory achieved
+      finalWinProb = 1.0;
+    } else if (wickets >= 10 || overs >= 20) {
+      // All out or overs completed - defeat
+      finalWinProb = 0.0;
+    }
+
     const response = {
-      chasing_team_win_prob: Math.round(winProb * 100 * 100) / 100, // Round to 2 decimal places
-      defending_team_win_prob: Math.round((1 - winProb) * 100 * 100) / 100,
+      chasing_team_win_prob: Math.round(finalWinProb * 100 * 100) / 100, // Round to 2 decimal places
+      defending_team_win_prob: Math.round((1 - finalWinProb) * 100 * 100) / 100,
       current_rr: Math.round(((runs / (overs * 6)) * 6) * 100) / 100,
       required_rr: Math.round((((target - runs) / (120 - overs * 6)) * 6) * 100) / 100,
       runs_needed: Math.max(0, target - runs),
