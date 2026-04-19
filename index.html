@@ -2459,7 +2459,7 @@
       var miData   = inn1.map(function(p){return {x:p.x,y:p.mi};}).concat(inn2.map(function(p){return {x:p.x,y:p.mi};}));
       var pbksData = inn1.map(function(p){return {x:p.x,y:p.pbks};}).concat(inn2.map(function(p){return {x:p.x,y:p.pbks};}));
 
-      new Chart(canvas, {
+      const chartInstance = new Chart(canvas, {
         type: 'line',
         data: {
           datasets: [
