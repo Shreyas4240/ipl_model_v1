@@ -203,134 +203,366 @@
     .live-overs-hint.invalid { color: var(--red); font-weight: 500; }
     .live-rr-eff-detail { font-size: 0.72rem !important; color: var(--text-3); margin-top: 0.35rem; max-width: 14rem; line-height: 1.35; }
     .live-rr-shrink-note { font-size: 0.72rem; color: var(--text-3); margin: 0.5rem 0 0; line-height: 1.4; max-width: 42rem; }
+    /* ── LIVE MATCH CARDS ────────────────────────────────── */
     .live-match-list {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 0.85rem;
-      margin-top: 0.8rem;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-top: 0;
     }
     .live-match-card {
-      border: 1px solid var(--border);
+      border: 1.5px solid var(--border);
       border-radius: 8px;
       background: var(--bg-2);
-      padding: 0.75rem;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .live-match-card:hover {
+      border-color: var(--border-2);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    }
+
+    /* Top bar: series label + status badge */
+    .live-card-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-3);
+    }
+    .live-card-series {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+    .live-match-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 0.18rem 0.55rem;
+      border-radius: 100px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      white-space: nowrap;
+    }
+    .live-match-badge.live {
+      background: rgba(74, 222, 128, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+    }
+    [data-theme="light"] .live-match-badge.live {
+      background: rgba(22, 163, 74, 0.1);
+      color: var(--green);
+      border: 1px solid rgba(22, 163, 74, 0.25);
+    }
+    .live-match-badge.live::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: liveDot 1.5s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .live-match-badge.completed {
+      background: rgba(251, 191, 36, 0.12);
+      color: var(--amber);
+      border: 1px solid rgba(251, 191, 36, 0.25);
+    }
+    .live-match-badge.upcoming {
+      background: var(--bg-3);
+      color: var(--text-3);
+      border: 1px solid var(--border);
+    }
+    @keyframes liveDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.75); }
+    }
+
+    /* Scorecard body */
+    .live-card-body {
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      flex: 1;
+    }
+    .team-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .team-logo-wrap {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .team-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1.5px solid var(--border);
+      background: var(--bg-3);
+    }
+    .team-logo-placeholder {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--bg-3);
+      border: 1.5px solid var(--border);
+    }
+    .team-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .team-name {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+    .team-name-abbr {
+      font-size: 0.68rem;
+      color: var(--text-3);
+      font-weight: 400;
+      margin-top: 0.1rem;
+    }
+    .team-score-wrap {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .team-score {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .team-score.batting {
+      color: var(--text);
+    }
+    .team-score.not-batting {
+      color: var(--text-3);
+      font-size: 0.82rem;
+    }
+    .team-overs {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--text-3);
+      margin-top: 0.1rem;
+    }
+    .team-row-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 0.1rem 0;
+    }
+
+    /* Result / status line */
+    .live-card-result {
+      font-size: 0.72rem;
+      color: var(--text-3);
+      line-height: 1.4;
+      padding-top: 0.35rem;
+      border-top: 1px solid var(--border);
+    }
+    .live-card-result.result-win {
+      color: var(--amber);
+      font-weight: 500;
+    }
+
+    /* ── WIN PROBABILITY CHART ──────────────────────────── */
+    .win-prob-chart-wrap {
+      padding-top: 0.6rem;
+      border-top: 1px solid var(--border);
+    }
+    .win-prob-chart-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.35rem;
+    }
+    .win-prob-chart-label {
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+    .win-prob-chart-teams {
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+    }
+    .win-prob-legend-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      margin-right: 0.2rem;
+      vertical-align: middle;
+    }
+    .win-prob-legend-item {
+      font-size: 0.6rem;
+      color: var(--text-3);
+      font-weight: 500;
+    }
+    .win-prob-live-pct {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      margin-left: 0.15rem;
+    }
+    .win-prob-live-pct.high { color: var(--green); }
+    .win-prob-live-pct.mid  { color: var(--amber); }
+    .win-prob-live-pct.low  { color: var(--red); }
+    .win-prob-canvas-wrap {
+      position: relative;
+      height: 80px;
+    }
+    .win-prob-note {
+      font-size: 0.6rem;
+      color: var(--text-3);
+      opacity: 0.6;
+      text-align: right;
+      margin-top: 0.2rem;
     }
     
-    .live-match-header {
+    /* Enhanced win probability with momentum */
+    .enhanced-win-prob {
+      margin-top: 0.5rem;
+      padding: 0.4rem;
+      background: var(--bg-2);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .prob-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 0.5rem;
     }
-    
-    .live-match-teams-with-logos {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      flex: 1;
-    }
-    
-    .team {
-      display: flex;
-      align-items: center;
-      gap: 0.3rem;
-      flex: 1;
-    }
-    
-    .team-logo {
-      width: 20px;
-      height: 20px;
-      border-radius: 4px;
-      object-fit: cover;
-      border: 1px solid var(--border);
-    }
-    
-    .team-name {
-      font-size: 0.75rem;
+    .team-prob {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
       font-weight: 600;
-      color: var(--text);
     }
-    
-    .vs {
-      font-size: 0.65rem;
-      font-weight: 600;
+    .momentum {
+      font-size: 0.6rem;
       color: var(--text-3);
-      padding: 0 0.2rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    
-    .live-match-badge {
-      font-size: 0.65rem;
-      font-weight: 600;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      white-space: nowrap;
-    }
-    
-    .live-match-badge.live {
-      background: var(--green);
-      color: var(--bg);
-      animation: pulse 2s infinite;
-    }
-    
-    .live-match-badge.completed {
-      background: var(--amber);
-      color: var(--bg);
-    }
-    
-    .live-match-badge.upcoming {
-      background: var(--text-3);
-      color: var(--bg);
-    }
-    
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.7; }
-    }
-    
-    .live-match-score { 
-      font-family: 'IBM Plex Mono', monospace; 
-      font-size: 0.8rem; 
-      font-weight: 600;
-      color: var(--text); 
-      text-align: center;
-      padding: 0.4rem;
+      font-weight: 500;
+      padding: 0.1rem 0.3rem;
       background: var(--bg-3);
-      border-radius: 4px;
+      border-radius: 3px;
       border: 1px solid var(--border);
     }
-    
-    .live-match-actions {
-      display: flex;
-      justify-content: center;
-    }
-    
-    .live-match-status { font-size: 0.72rem; color: var(--text-3); }
-    .live-match-btn {
-      margin-top: 0.25rem;
-      border: 1.5px solid var(--border-2);
-      border-radius: 6px;
+
+    /* Footer action */
+    .live-card-footer {
+      padding: 0.55rem 0.85rem;
+      border-top: 1px solid var(--border);
       background: var(--bg-3);
-      color: var(--text);
-      padding: 0.35rem 0.55rem;
-      font-family: 'Sora', sans-serif;
-      font-size: 0.75rem;
-      cursor: pointer;
     }
-    .live-match-btn:hover { border-color: var(--text); }
+    .live-match-btn {
+      width: 100%;
+      border: none;
+      background: none;
+      color: var(--text-3);
+      font-family: 'Sora', sans-serif;
+      font-size: 0.72rem;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 0;
+      text-align: center;
+      letter-spacing: 0.02em;
+      transition: color 0.15s;
+    }
+    .live-match-btn:hover { color: var(--text); }
+    .live-match-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
     .live-match-empty {
       font-size: 0.78rem;
       color: var(--text-3);
       border: 1px dashed var(--border);
       border-radius: 8px;
-      padding: 0.7rem 0.8rem;
+      padding: 1rem 1.25rem;
       margin-top: 0.8rem;
+      text-align: center;
+    }
+
+    /* Last-updated bar */
+    #live-ipl-heading { margin-bottom: 0.5rem; }
+    .live-section-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+      min-height: 1.5rem;
+    }
+    .live-updated {
+      font-size: 0.68rem;
+      color: var(--text-3);
+      letter-spacing: 0.02em;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .live-refresh-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-3);
+      border: 1.5px solid var(--border-2);
+      border-radius: 4px;
+      padding: 0;
+      width: 1.75rem;
+      height: 1.6rem;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      flex-shrink: 0;
+    }
+    .live-refresh-btn:hover { border-color: var(--text); }
+    .live-refresh-btn:active { background: var(--bg-2); }
+    .live-refresh-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .live-refresh-btn.loading { pointer-events: none; }
+
+    /* Conic gradient ring — bright green fading to transparent, like the reference */
+    .live-refresh-spinner {
+      display: block;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        var(--green) 270deg,
+        transparent 360deg
+      );
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #fff calc(100% - 2.5px));
+              mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #fff calc(100% - 2.5px));
+      opacity: 0.55;
+      transition: opacity 0.15s;
+    }
+    .live-refresh-btn:hover .live-refresh-spinner { opacity: 0.85; }
+    .live-refresh-btn.loading .live-refresh-spinner {
+      opacity: 1;
+      animation: conicSpin 0.9s linear infinite;
+    }
+    @keyframes conicSpin {
+      to { transform: rotate(360deg); }
     }
     .subtitle code {
       font-family: 'IBM Plex Mono', monospace;
@@ -593,6 +825,38 @@
     }
     .chart-wrap { position: relative; height: 240px; }
 
+    /* ── MATCH WIN PROBABILITY SECTION ──────────────────── */
+    .match-winprob-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .match-winprob-teams {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      color: var(--text-2);
+      font-weight: 500;
+    }
+    .match-winprob-team-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .match-winprob-note {
+      font-size: 0.65rem;
+      color: var(--text-3);
+      margin-left: auto;
+    }
+    .match-winprob-chart-wrap {
+      position: relative;
+      height: 200px;
+    }
+
     /* ── STATES ──────────────────────────────────────────── */
     .loading {
       font-size: 0.8rem;
@@ -655,7 +919,12 @@
 
     <section aria-labelledby="live-ipl-heading">
       <h2 id="live-ipl-heading">Live IPL Matches</h2>
-      <p class="subtitle">Auto-fetched from CricketData. Click a card to load live runs/wickets/overs into the predictor.</p>
+      <div class="live-section-meta">
+        <span class="live-updated" id="live-updated"></span>
+        <button class="live-refresh-btn" id="live-refresh-btn" aria-label="Refresh live scores">
+          <span class="live-refresh-spinner"></span>
+        </button>
+      </div>
       <p class="loading" id="live-matches-loading">Loading…</p>
       <div class="live-match-list" id="live-match-list"></div>
     </section>
@@ -1159,13 +1428,334 @@
       tableWrap.innerHTML = html;
     }
 
+    /* ── WIN PROBABILITY ───────────────────────────────── */
+    // Phase-specific σ fitted from ipl_innings_snapshots.csv residuals:
+    //   Overs 1–6:   σ = 30.8
+    //   Overs 7–12:  σ = 23.3
+    //   Overs 13–16: σ = 16.6
+    //   Overs 17–20: σ = 11.8
+    const WIN_PROB_SIGMA = [30.8, 23.3, 16.6, 11.8];
+
+    function winProbSigma(oversCompleted) {
+      const oc = Number(oversCompleted);
+      if (oc <= 6)  return WIN_PROB_SIGMA[0];
+      if (oc <= 12) return WIN_PROB_SIGMA[1];
+      if (oc <= 16) return WIN_PROB_SIGMA[2];
+      return WIN_PROB_SIGMA[3];
+    }
+
+    // Rational approximation of the normal CDF (Abramowitz & Stegun 26.2.17)
+    function normalCDF(z) {
+      const t = 1 / (1 + 0.2316419 * Math.abs(z));
+      const poly = t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+      const p = 1 - (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z) * poly;
+      return z >= 0 ? p : 1 - p;
+    }
+
+    /**
+     * Compute chasing team win probability during 2nd innings.
+     * @param {number} chasingScore  - current runs scored by chasing team
+     * @param {number} wicketsLost   - wickets lost by chasing team
+     * @param {number} oversCompleted - overs completed by chasing team
+     * @param {number} target        - runs needed (1st innings total + 1)
+     * @returns {number} probability 0–1, clamped to [0.02, 0.98]
+     */
+    function chaseWinProb(chasingScore, wicketsLost, oversCompleted, target) {
+      const oc = Number(oversCompleted);
+      const oversRem = Math.max(0, 20 - oc);
+      if (oversRem <= 0) return chasingScore >= target ? 0.98 : 0.02;
+
+      const runsNeeded = target - chasingScore;
+      if (runsNeeded <= 0) return 0.98; // already won
+
+      const observedRR = oc > 0 ? chasingScore / oc : 8.0;
+      const predictedFinal = predictScoreClient(chasingScore, observedRR, oversRem, wicketsLost, oc);
+      const sigma = winProbSigma(oc);
+
+      // P(win) = P(predicted_final >= target) treating prediction error as N(0, sigma)
+      // = P(error >= target - predictedFinal) = 1 - Φ((target - predictedFinal) / sigma)
+      const z = (target - predictedFinal) / sigma;
+      const prob = 1 - normalCDF(z);
+      return Math.min(0.98, Math.max(0.02, prob));
+    }
+
+    function probClass(p) {
+      if (p >= 0.60) return 'high';
+      if (p >= 0.40) return 'mid';
+      return 'low';
+    }
+
+    // IPL average 1st innings total — 2023–2026 from ipl_male_json (n=233 completed matches, 18+ overs)
+    const IPL_AVG_TOTAL = 193;
+
+    // Venue-specific averages (2023–2026, n≥3 matches). Matched by keyword substring.
+    // Source: ipl_male_json ball-by-ball data.
+    const VENUE_AVG_MAP = [
+      ['Narendra Modi',  196],  // Ahmedabad
+      ['Chidambaram',    172],  // Chennai
+      ['Chepauk',        172],  // Chennai alt name
+      ['Ekana',          176],  // Lucknow
+      ['Wankhede',       194],  // Mumbai
+      ['Eden Gardens',   199],  // Kolkata
+      ['Arun Jaitley',   200],  // Delhi
+      ['Chinnaswamy',    195],  // Bengaluru
+      ['Rajiv Gandhi',   192],  // Hyderabad
+      ['Sawai Mansingh', 187],  // Jaipur
+      ['Mullanpur',      177],  // Punjab (new)
+      ['Barsapara',      172],  // Guwahati
+      ['Bindra',         198],  // Mohali
+      ['Dharamsala',     209],  // Dharamsala
+      ['Visakhapatnam',  209],  // Vizag
+      ['New Chandigarh', 203],  // New Chandigarh
+    ];
+
+    function venueAvgTotal(venueStr) {
+      if (!venueStr) return IPL_AVG_TOTAL;
+      for (var i = 0; i < VENUE_AVG_MAP.length; i++) {
+        if (venueStr.indexOf(VENUE_AVG_MAP[i][0]) >= 0) return VENUE_AVG_MAP[i][1];
+      }
+      return IPL_AVG_TOTAL;
+    }
+
+    /**
+     * Win probability for the team batting first, at a given 1st innings snapshot.
+     * P(their final total > venueAvg) — uses venue-specific average if provided.
+     */
+    function inn1WinProb(currentScore, wicketsLost, oversCompleted, venueAvg) {
+      const avg = venueAvg || IPL_AVG_TOTAL;
+      const oc = Number(oversCompleted);
+      if (oc <= 0) return 0.5;
+      const oversRem = Math.max(0, 20 - oc);
+      if (oversRem <= 0) return currentScore > avg ? 0.75 : 0.35;
+      const rr = currentScore / oc;
+      const pred = predictScoreClient(currentScore, rr, oversRem, wicketsLost, oc);
+      const sigma = winProbSigma(oc);
+      const z = (avg - pred) / sigma;
+      const p = 1 - normalCDF(z);
+      return Math.min(0.85, Math.max(0.15, p));
+    }
+
+    // Map of chartId → Chart instance — destroyed on re-render
+    const liveWinProbCharts = {};
+
+    /**
+     * Build the win-probability series for a match and render a Chart.js line.
+     * inn1: {runs, wickets, overs}  — first batting team's current/final snapshot
+     * inn2: {runs, wickets, overs}  — chasing team's snapshot (null if not started)
+     * target: inn1.runs + 1
+     * status: 'live' | 'completed'
+     */
+    function buildWinProbChart(canvasId, inn1, inn2, abbr1, abbr2, status, vAvg) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas || typeof Chart === 'undefined') return;
+
+      // Destroy previous instance if re-rendering
+      if (liveWinProbCharts[canvasId]) {
+        liveWinProbCharts[canvasId].destroy();
+        delete liveWinProbCharts[canvasId];
+      }
+
+      const c = chartColors();
+      const target = inn1.runs + 1;
+
+      // ── 1st innings points (overs 1–20) ──────────────────
+      // Reconstruct trajectory by interpolating linearly to the known snapshot.
+      // P(bat team wins) from inn1 model; P(field team wins) = 1 - that. Always sums to 100.
+      const inn1OC = Math.floor(parseFloat(inn1.overs || '20')) || 20;
+      const inn1Points = [];   // batting team (team1)
+      const inn1PointsOpp = []; // fielding team (team2) = complement
+
+      for (let oc = 1; oc <= inn1OC; oc++) {
+        const frac = oc / inn1OC;
+        const estScore = Math.round(inn1.runs * frac);
+        const estWkts  = Math.round((inn1.wickets != null ? inn1.wickets : 5) * frac);
+        const p = inn1WinProb(estScore, estWkts, oc, vAvg);
+        inn1Points.push({ x: oc, y: Math.round(p * 100) });
+        inn1PointsOpp.push({ x: oc, y: Math.round((1 - p) * 100) });
+      }
+
+      // ── 2nd innings points (overs 21–40) ─────────────────
+      const inn2Points = [];
+      const inn2PointsOpp = [];
+      if (inn2 && inn2.overs != null) {
+        const inn2OC = Math.floor(parseFloat(inn2.overs)) || 0;
+        for (let oc = 1; oc <= inn2OC; oc++) {
+          const frac = oc / Math.max(inn2OC, 1);
+          const estScore = Math.round(inn2.runs * frac);
+          const estWkts  = Math.round((inn2.wickets != null ? inn2.wickets : 0) * frac);
+          const p = chaseWinProb(estScore, estWkts, oc, target);
+          inn2Points.push({ x: 20 + oc, y: Math.round(p * 100) });
+          inn2PointsOpp.push({ x: 20 + oc, y: Math.round((1 - p) * 100) });
+        }
+      }
+
+      // Merge: team1 line = inn1Points + inn2PointsOpp (defending in inn2)
+      //        team2 line = inn1PointsOpp + inn2Points (chasing in inn2)
+      const team1Data = inn1Points.concat(inn2PointsOpp);
+      const team2Data = inn1PointsOpp.concat(inn2Points);
+
+      // Current over marker
+      const currentX = inn2 && inn2.overs != null
+        ? 20 + Math.floor(parseFloat(inn2.overs))
+        : inn1OC;
+
+      const dark = getTheme() === 'dark';
+      const color1 = dark ? 'rgba(250,250,250,0.7)' : 'rgba(10,10,10,0.6)';
+      const color2 = dark ? '#4ade80' : '#16a34a';
+
+      liveWinProbCharts[canvasId] = new Chart(canvas, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: abbr1 + ' win%',
+              data: team1Data,
+              borderColor: color1,
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              tension: 0.3,
+              parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+            },
+            {
+              label: abbr2 + ' win%',
+              data: team2Data,
+              borderColor: color2,
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              tension: 0.3,
+              parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              type: 'linear',
+              min: 0,
+              max: 40,
+              grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
+              border: { display: false },
+              ticks: {
+                color: c.text,
+                font: { family: 'IBM Plex Mono', size: 8 },
+                maxTicksLimit: 9,
+                callback: function(v) {
+                  // Label as "Ov N" at key overs
+                  if (v === 0) return '';
+                  if (v === 6) return '6';
+                  if (v === 10) return '10';
+                  if (v === 16) return '16';
+                  if (v === 20) return '20';
+                  if (v === 26) return '26';
+                  if (v === 30) return '30';
+                  if (v === 36) return '36';
+                  if (v === 40) return '40';
+                  return '';
+                },
+              },
+            },
+            y: {
+              min: 0,
+              max: 100,
+              grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
+              border: { display: false },
+              ticks: {
+                color: c.text,
+                font: { family: 'IBM Plex Mono', size: 8 },
+                maxTicksLimit: 3,
+                callback: function(v) { return v === 50 ? '50%' : v === 0 ? '0' : v === 100 ? '100' : ''; },
+              },
+            },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+              backgroundColor: dark ? '#1f1f1f' : '#fff',
+              borderColor: dark ? '#2a2a2a' : '#d4d4d4',
+              borderWidth: 1,
+              titleColor: c.text,
+              bodyColor: c.text,
+              titleFont: { family: 'IBM Plex Mono', size: 9 },
+              bodyFont: { family: 'IBM Plex Mono', size: 9 },
+              callbacks: {
+                title: function(items) {
+                  const x = items[0].parsed.x;
+                  return x > 20 ? 'Inn 2 ov ' + (x - 20).toFixed(1) : 'Inn 1 ov ' + x.toFixed(1);
+                },
+                label: function(item) {
+                  return item.dataset.label + ': ' + item.parsed.y + '%';
+                },
+              },
+            },
+            // Vertical line at current over
+            annotation: undefined,
+          },
+        },
+        plugins: [{
+          id: 'currentOverLine',
+          afterDraw: function(chart) {
+            const ctx = chart.ctx;
+            const xScale = chart.scales.x;
+            const yScale = chart.scales.y;
+            if (!xScale || !yScale) return;
+            const xPx = xScale.getPixelForValue(currentX);
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(xPx, yScale.top);
+            ctx.lineTo(xPx, yScale.bottom);
+            ctx.strokeStyle = dark ? 'rgba(250,250,250,0.25)' : 'rgba(10,10,10,0.2)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.stroke();
+            ctx.restore();
+          },
+        }],
+      });
+    }
+
+    // Enhanced win probability with momentum features
+    async function fetchEnhancedWinProb(runs, wickets, overs, target, venue, recentBalls) {
+      try {
+        const response = await fetch('/api/winprob-enhanced', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            runs: runs,
+            wickets: wickets,
+            overs: overs,
+            target: target,
+            venue: venue,
+            recent_balls: recentBalls || []
+          })
+        });
+        
+        if (!response.ok) {
+          console.error('Enhanced win prob API error:', response.status);
+          return null;
+        }
+        
+        return await response.json();
+      } catch (err) {
+        console.error('Error fetching enhanced win prob:', err);
+        return null;
+      }
+    }
+
     function renderLiveMatches(data) {
       const loading = document.getElementById('live-matches-loading');
       const wrap = document.getElementById('live-match-list');
       loading.textContent = '';
-      let matches = (data && data.matches) || [];
-      
-      // Team logo mapping - use official HSCICDN URLs
+      const matches = (data && data.matches) || [];
+
       const teamLogos = {
         'Chennai Super Kings': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313400/313421.logo.png',
         'Delhi Capitals': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313400/313422.logo.png',
@@ -1176,77 +1766,263 @@
         'Punjab Kings': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/414800/414846.png',
         'Rajasthan Royals': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/400400/400406.png',
         'Royal Challengers Bengaluru': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/378000/378049.png',
-        'Sunrisers Hyderabad': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/414800/414845.png'
+        'Sunrisers Hyderabad': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/414800/414845.png',
       };
+      const teamAbbr = {
+        'Chennai Super Kings': 'CSK', 'Delhi Capitals': 'DC', 'Gujarat Titans': 'GT',
+        'Kolkata Knight Riders': 'KKR', 'Lucknow Super Giants': 'LSG', 'Mumbai Indians': 'MI',
+        'Punjab Kings': 'PBKS', 'Rajasthan Royals': 'RR',
+        'Royal Challengers Bengaluru': 'RCB', 'Sunrisers Hyderabad': 'SRH',
+      };
+
       if (!matches.length) {
-        wrap.innerHTML = '<div class="live-match-empty">No live IPL scorecards available right now from CricketData.</div>';
+        wrap.innerHTML = '<div class="live-match-empty">No IPL scorecards available right now.</div>';
         return;
       }
-      wrap.innerHTML = matches.map(function (m) {
+
+      function logoHtml(team) {
+        const logo = teamLogos[team] || '';
+        return logo
+          ? '<img src="' + logo + '" alt="' + team + '" class="team-logo" loading="lazy">'
+          : '<div class="team-logo-placeholder"></div>';
+      }
+
+      function fmtScore(inn) {
+        if (!inn || inn.runs == null) return null;
+        var s = String(inn.runs);
+        if (inn.wickets != null && inn.wickets < 10) s += '/' + inn.wickets;
+        return s;
+      }
+
+      function teamRowHtml(team, inn, isBatting, status) {
+        const abbr = teamAbbr[team] || team.split(' ').map(function(w){return w[0];}).join('');
+        const score = fmtScore(inn);
+        let scoreHtml;
+        if (score != null) {
+          scoreHtml =
+            '<div class="team-score' + (isBatting ? ' batting' : '') + '">' + score + '</div>' +
+            (inn.overs ? '<div class="team-overs">' + inn.overs + ' ov</div>' : '');
+        } else {
+          scoreHtml = '<div class="team-score not-batting">' + (status === 'upcoming' ? '—' : 'Yet to bat') + '</div>';
+        }
+        return (
+          '<div class="team-row">' +
+            '<div class="team-logo-wrap">' + logoHtml(team) + '</div>' +
+            '<div class="team-info">' +
+              '<div class="team-name">' + team + '</div>' +
+              '<div class="team-name-abbr">' + abbr + '</div>' +
+            '</div>' +
+            '<div class="team-score-wrap">' + scoreHtml + '</div>' +
+          '</div>'
+        );
+      }
+
+      // Collect chart render jobs — must run after innerHTML is set
+      const chartJobs = [];
+
+      wrap.innerHTML = matches.map(function(m) {
         const teams = m.teams || [];
         const team1 = teams[0] || 'Team 1';
         const team2 = teams[1] || 'Team 2';
-        const score = m.score || {};
-        const scoreTxt = (score.runs != null && score.wickets != null && score.overs_decimal != null)
-          ? (score.runs + '/' + score.wickets + ' (' + score.overs_decimal + ' ov)')
-          : 'Score unavailable';
         const status = m.status || 'unknown';
-        const runs = score.runs != null ? String(score.runs) : '';
-        const wickets = score.wickets != null ? String(score.wickets) : '';
-        const overs = score.overs_input != null ? String(score.overs_input) : '';
-        
-        // Get team logos
-        const logo1 = teamLogos[team1] || '';
-        const logo2 = teamLogos[team2] || '';
-        
-        // Status badge styling
+        const inn1 = m.innings1 || null;
+        const inn2 = m.innings2 || null;
+
         const statusClass = status.toLowerCase();
-        const statusText = status === 'live' ? 'LIVE' : status.toUpperCase();
-        
+        const statusText = status === 'live' ? 'Live' : status === 'completed' ? 'Final' : 'Upcoming';
+
+        const bat1Team = inn1 ? inn1.team : team1;
+        const bat2Team = inn2 ? inn2.team : (bat1Team === team1 ? team2 : team1);
+
+        const row1Html = teamRowHtml(bat1Team, inn1, false, status);
+        const row2Html = teamRowHtml(bat2Team, inn2, status === 'live' && inn2 != null, status);
+
+        const resultText = m.result || '';
+        const isWin = /won by/i.test(resultText);
+        const statusLine = isWin ? resultText
+          : status === 'live' ? 'In progress'
+          : status === 'upcoming' ? 'Match not started'
+          : resultText || '';
+
+        // Win probability chart — for live matches with at least 1st innings data
+        let winProbChartHtml = '';
+        const chartId = 'wp-chart-' + (teams.join('-').replace(/\s+/g, '').toLowerCase());
+        if (status === 'live' && inn1 && inn1.overs != null) {
+          const abbr1 = teamAbbr[bat1Team] || bat1Team.split(' ').map(function(w){return w[0];}).join('');
+          const abbr2 = teamAbbr[bat2Team] || bat2Team.split(' ').map(function(w){return w[0];}).join('');
+          const vAvg = venueAvgTotal(m.venue || '');
+
+          // Compute current win probability using enhanced API
+          var curP1, curP2;
+          if (inn2 && inn2.overs != null) {
+            // 2nd innings chase in progress - use enhanced API
+            fetchEnhancedWinProb(
+              inn2.runs || 0,
+              inn2.wickets != null ? inn2.wickets : 0,
+              parseFloat(inn2.overs) || 0,
+              inn1.runs + 1,
+              m.venue || '',
+              m.recent_balls || [] // Use scraped recent balls data
+            ).then(function(result) {
+              if (result) {
+                curP2 = result.chasing_team_win_prob;
+                curP1 = result.defending_team_win_prob;
+                
+                // Update the win probability display
+                const chartElement = document.getElementById(chartId + '-enhanced');
+                if (chartElement) {
+                  chartElement.innerHTML = `
+                    <div class="enhanced-win-prob">
+                      <div class="prob-row">
+                        <span class="team-prob">${abbr2}: ${curP2}%</span>
+                        <span class="momentum">Momentum: ${result.momentum_score}%</span>
+                        <span class="team-prob">${abbr1}: ${curP1}%</span>
+                      </div>
+                    </div>
+                  `;
+                }
+              }
+            }).catch(function(err) {
+              console.error('Enhanced win prob failed, using fallback:', err);
+              // Fallback to original calculation
+              var oc2 = parseFloat(inn2.overs) || 0;
+              var tgt = inn1.runs + 1;
+              var p2 = chaseWinProb(inn2.runs, inn2.wickets != null ? inn2.wickets : 0, oc2, tgt);
+              curP2 = Math.round(p2 * 100);
+              curP1 = 100 - curP2;
+            });
+            
+            // Initial fallback calculation
+            var oc2 = parseFloat(inn2.overs) || 0;
+            var tgt = inn1.runs + 1;
+            var p2 = chaseWinProb(inn2.runs, inn2.wickets != null ? inn2.wickets : 0, oc2, tgt);
+            curP2 = Math.round(p2 * 100);
+            curP1 = 100 - curP2;
+          } else {
+            // 1st innings in progress - use original calculation for now
+            var oc1 = parseFloat(inn1.overs) || 0;
+            var p1 = inn1WinProb(inn1.runs, inn1.wickets != null ? inn1.wickets : 0, oc1, vAvg);
+            curP1 = Math.round(p1 * 100);
+            curP2 = 100 - curP1;
+          }
+
+          function pClass(p) { return p >= 60 ? 'high' : p >= 40 ? 'mid' : 'low'; }
+
+          winProbChartHtml = (
+            '<div class="win-prob-chart-wrap">' +
+              '<div class="win-prob-chart-title">' +
+                '<span class="win-prob-chart-label">Win probability</span>' +
+                '<span class="win-prob-chart-teams">' +
+                  '<span class="win-prob-legend-item">' +
+                    '<span class="win-prob-legend-dot" style="background:' + (getTheme()==='dark'?'rgba(250,250,250,0.7)':'rgba(10,10,10,0.6)') + '"></span>' +
+                    abbr1 +
+                    ' <strong class="win-prob-live-pct ' + pClass(curP1) + '">' + curP1 + '%</strong>' +
+                  '</span>' +
+                  '<span class="win-prob-legend-item">' +
+                    '<span class="win-prob-legend-dot" style="background:' + (getTheme()==='dark'?'#4ade80':'#16a34a') + '"></span>' +
+                    abbr2 +
+                    ' <strong class="win-prob-live-pct ' + pClass(curP2) + '">' + curP2 + '%</strong>' +
+                  '</span>' +
+                '</span>' +
+              '</div>' +
+              '<div class="win-prob-canvas-wrap">' +
+                '<canvas id="' + chartId + '"></canvas>' +
+              '</div>' +
+              '<div class="win-prob-note">model-based · not a market probability</div>' +
+            '</div>'
+          );
+          // Schedule chart build after DOM is ready
+          chartJobs.push({ chartId: chartId, inn1: inn1, inn2: inn2, abbr1: abbr1, abbr2: abbr2, status: status, vAvg: vAvg });
+        }
+
+        const predInn = inn2 || inn1;
+        const canPredict = predInn && predInn.runs != null && predInn.overs != null;
+        const predRuns = predInn ? (predInn.runs != null ? predInn.runs : '') : '';
+        const predWkts = predInn ? (predInn.wickets != null ? predInn.wickets : '') : '';
+        const predOvers = predInn ? (predInn.overs || '') : '';
+
         return (
           '<article class="live-match-card">' +
-            '<div class="live-match-header">' +
-              '<div class="live-match-teams-with-logos">' +
-                '<div class="team">' +
-                  (logo1 ? '<img src="' + logo1 + '" alt="' + team1 + '" class="team-logo">' : '') +
-                  '<span class="team-name">' + team1 + '</span>' +
-                '</div>' +
-                '<div class="vs">VS</div>' +
-                '<div class="team">' +
-                  '<span class="team-name">' + team2 + '</span>' +
-                  (logo2 ? '<img src="' + logo2 + '" alt="' + team2 + '" class="team-logo">' : '') +
-                '</div>' +
-              '</div>' +
-              '<div class="live-match-badge ' + statusClass + '">' + statusText + '</div>' +
+            '<div class="live-card-topbar">' +
+              '<span class="live-card-series">' + (m.series || 'IPL 2026') + '</span>' +
+              '<span class="live-match-badge ' + statusClass + '">' + statusText + '</span>' +
             '</div>' +
-            '<div class="live-match-score">' + scoreTxt + '</div>' +
-            '<div class="live-match-actions">' +
-              '<button class="live-match-btn" ' +
-                'data-runs="' + runs + '" ' +
-                'data-wickets="' + wickets + '" ' +
-                'data-overs="' + overs + '">' +
-                'Use for prediction' +
+            '<div class="live-card-body">' +
+              row1Html +
+              '<div class="team-row-divider"></div>' +
+              row2Html +
+              (winProbChartHtml || (statusLine ? '<div class="live-card-result' + (isWin ? ' result-win' : '') + '">' + statusLine + '</div>' : '')) +
+            '</div>' +
+            '<div class="live-card-footer">' +
+              '<button class="live-match-btn"' +
+                ' data-runs="' + predRuns + '"' +
+                ' data-wickets="' + predWkts + '"' +
+                ' data-overs="' + predOvers + '"' +
+                (canPredict ? '' : ' disabled') + '>' +
+                (canPredict ? '↑ Load into predictor' : 'No score data yet') +
               '</button>' +
             '</div>' +
           '</article>'
         );
       }).join('');
+
+      // Build charts now that canvases are in the DOM
+      chartJobs.forEach(function(job) {
+        buildWinProbChart(job.chartId, job.inn1, job.inn2, job.abbr1, job.abbr2, job.status, job.vAvg);
+      });
+    }
+
+    /* ── LIVE MATCHES: timestamp + refresh ────────────── */
+    let liveLastFetched = null;
+    let liveRefreshTimer = null;
+    let liveAgeTimer = null;
+
+    function formatAge(ms) {
+      const s = Math.floor(ms / 1000);
+      if (s < 5)  return 'just now';
+      if (s < 60) return s + 's ago';
+      const m = Math.floor(s / 60);
+      return m + 'm ' + (s % 60) + 's ago';
+    }
+
+    function tickLiveAge() {
+      const el = document.getElementById('live-updated');
+      if (!el) return;
+      if (!liveLastFetched) { el.textContent = ''; return; }
+      el.textContent = 'Updated ' + formatAge(Date.now() - liveLastFetched);
     }
 
     function loadLiveMatches() {
       const loading = document.getElementById('live-matches-loading');
+      const btn = document.getElementById('live-refresh-btn');
       loading.textContent = 'Loading…';
+      if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+
       fetch('/api/live')
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         })
-        .then(renderLiveMatches)
+        .then(function(data) {
+          liveLastFetched = Date.now();
+          tickLiveAge();
+          renderLiveMatches(data);
+        })
         .catch(function () {
-          loading.textContent = 'Could not load live IPL data from /api/live.';
+          loading.textContent = 'Could not load live IPL data.';
           document.getElementById('live-match-list').innerHTML = '';
+        })
+        .finally(function() {
+          if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
         });
     }
+
+    document.getElementById('live-refresh-btn').addEventListener('click', function() {
+      // Reset the auto-refresh timer so it doesn't fire right after a manual refresh
+      clearInterval(liveRefreshTimer);
+      loadLiveMatches();
+      liveRefreshTimer = setInterval(loadLiveMatches, 60000);
+    });
 
     function loadRecent() {
       const days = document.getElementById('days-select').value || 30;
@@ -1450,7 +2226,9 @@
 
     loadRecent();
     loadLiveMatches();
-    setInterval(loadLiveMatches, 60000);
+    liveRefreshTimer = setInterval(loadLiveMatches, 60000);
+    liveAgeTimer = setInterval(tickLiveAge, 5000);
+
   </script>
 </body>
 </html>

@@ -12,6 +12,14 @@
     "api/live.js": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "api/winprob.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
+    "api/winprob-enhanced.js": {
+      "memory": 1024,
+      "maxDuration": 30
     }
   }
 }
