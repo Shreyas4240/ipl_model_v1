@@ -1583,8 +1583,16 @@
      * Only appends the current over's point — never rewrites history.
      */
     function buildWinProbChart(canvasId, inn1, inn2, abbr1, abbr2, status, vAvg) {
+      console.log('[buildWinProbChart] Starting for', canvasId, 'inn1:', inn1, 'inn2:', inn2);
       const canvas = document.getElementById(canvasId);
-      if (!canvas || typeof Chart === 'undefined') return;
+      if (!canvas) {
+        console.error('[buildWinProbChart] Canvas not found:', canvasId);
+        return;
+      }
+      if (typeof Chart === 'undefined') {
+        console.error('[buildWinProbChart] Chart not available');
+        return;
+      }
 
       const target = inn1.runs + 1;
       const dark = getTheme() === 'dark';
@@ -1779,6 +1787,7 @@
       });
       chartInstance._currentX = currentX;
       liveWinProbCharts[canvasId] = chartInstance;
+      console.log('[buildWinProbChart] Chart created and stored for', canvasId);
     }
 
     /**
