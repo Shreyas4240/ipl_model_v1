@@ -1630,10 +1630,13 @@
 
       // Only append if this is a new over we haven't recorded yet
       if (currentX > hist.lastX && currentX > 0) {
+        console.log('[buildWinProbChart] Adding point at over:', currentX, 'win%:', curP1, '/', curP2);
         hist.team1.push({ x: currentX, y: curP1 });
         hist.team2.push({ x: currentX, y: curP2 });
         hist.lastX = currentX;
         saveWinProbHistory();
+      } else {
+        console.log('[buildWinProbChart] Skipping point at over:', currentX, 'lastX:', hist.lastX);
       }
 
       // If chart already exists AND its canvas is still in the DOM, just update data.
@@ -1810,8 +1813,19 @@
       }
       const hist = liveWinProbHistory[canvasId];
 
+      // Get current live over to filter future balls
+      const currentInn = inn2 || inn1;
+      const currentOver = currentInn ? oversToDecimal(currentInn.overs || '0') : 0;
+      console.log('[updateChartFromBalls] Current live over:', currentOver, 'filtering balls up to this point');
+
       var appended = false;
       balls.forEach(function(b) {
+        // Only process balls up to current live over (not future balls)
+        var ballOver = b.innings === 2 ? 20 + b.over : b.over;
+        if (ballOver > currentOver + 0.1) { // Small buffer for current ball
+          console.log('[updateChartFromBalls] Skipping future ball at over:', ballOver, 'current:', currentOver);
+          return;
+        }
         var x = b.innings === 2 ? 20 + b.over : b.over;
         x = parseFloat(x.toFixed(4));
         if (x <= hist.lastX) return;

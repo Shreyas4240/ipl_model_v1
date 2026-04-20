@@ -189,8 +189,11 @@ module.exports = async function handler(req, res) {
         // Add matchId and slug so frontend can call /api/scorecard
         parsed.matchId = matchId;
         // slug = just the text part after the matchId, e.g. "pbks-vs-lsg-29th-match-..."
+        console.log('[live.js] Processing href:', href, 'matchId:', matchId);
         const hrefParts = href.split('/live-cricket-scores/')[1] || '';
+        console.log('[live.js] hrefParts after split:', hrefParts);
         parsed.slug = hrefParts.includes('/') ? hrefParts.split('/').slice(1).join('/') : hrefParts;
+        console.log('[live.js] Generated slug:', parsed.slug);
         seenIds.add(matchId);
         matches.push(parsed);
       } else {
