@@ -55,62 +55,6 @@ function parseVenue(text) {
  *   '26th Match • Bengaluru...RCB175-8 (20)DC179-4 (19.5)Delhi Capitals won by 6 wkts'
  * Cricbuzz uses RUNS-WICKETS (OVERS) format (hyphen, not slash).
  */
-function extractRecentBalls(matchPageText, numBalls = 6) {
-  /**
-   * Extract recent ball data from match page commentary for momentum calculations.
-   * Looks for ball-by-ball commentary patterns like "6 runs", "Wicket", "1 run", etc.
-   */
-  const recentBalls = [];
-  
-  // Try to find commentary sections - look for patterns of ball-by-ball data
-  // This is a simplified approach - in production, you'd parse structured commentary
-  const ballPatterns = [
-    /(\d+)\s+runs?/gi,
-    /wicket|wkt|out|bowled|caught/gi,
-    /(\d+)\s+run/gi,
-    /six|four|boundary/gi,
-    /dot|0\s+runs?/gi
-  ];
-  
-  // Extract recent ball events from text
-  // This is a basic implementation - real implementation would parse structured data
-  const lines = matchPageText.split('\n').filter(line => line.trim());
-  
-  for (let i = lines.length - 1; i >= Math.max(0, lines.length - numBalls * 2); i--) {
-    const line = lines[i].toLowerCase();
-    let runs = 0;
-    let wickets = 0;
-    
-    // Extract runs
-    const runMatch = line.match(/(\d+)\s*(?:runs?|run)/);
-    if (runMatch) {
-      runs = parseInt(runMatch[1]);
-    } else if (line.includes('six') || line.includes('6')) {
-      runs = 6;
-    } else if (line.includes('four') || line.includes('boundary') || line.includes('4')) {
-      runs = 4;
-    } else if (line.includes('dot') || line.includes('0 runs')) {
-      runs = 0;
-    }
-    
-    // Extract wickets
-    if (line.includes('wicket') || line.includes('wkt') || line.includes('out') || 
-        line.includes('bowled') || line.includes('caught') || line.includes('lbw')) {
-      wickets = 1;
-    }
-    
-    // Only add if we found something meaningful
-    if (runs > 0 || wickets > 0) {
-      recentBalls.unshift({ runs, wickets });
-      if (recentBalls.length >= numBalls) break;
-    }
-  }
-  
-  // If we couldn't extract real data, return empty array
-  // The momentum calculation will handle this gracefully
-  return recentBalls;
-}
-
 function parseRichCard(text) {
   // Find all IPL abbreviations in order of appearance
   const abbrPositions = [];
@@ -241,24 +185,12 @@ module.exports = async function handler(req, res) {
         const parsed = parseRichCard(text);
         if (!parsed) continue;
         if (!IPL_TEAMS.has(parsed.teams[0]) && !IPL_TEAMS.has(parsed.teams[1])) continue;
-        
-        // For live matches, fetch the full match page to get recent ball data
-        if (parsed.status === 'live') {
-          try {
-            const matchUrl = BASE_URL + href;
-            const matchResp = await axios.get(matchUrl, { headers: HEADERS, timeout: 8000 });
-            const matchPageText = matchResp.data;
-            const recentBalls = extractRecentBalls(matchPageText, 6);
-            parsed.recent_balls = recentBalls;
-            console.log(`[live] Extracted ${recentBalls.length} recent balls for match ${matchId}`);
-          } catch (err) {
-            console.log(`[live] Failed to fetch match page for ${matchId}: ${err.message}`);
-            parsed.recent_balls = [];
-          }
-        } else {
-          parsed.recent_balls = [];
-        }
-        
+
+        // Add matchId and slug so frontend can call /api/scorecard
+        parsed.matchId = matchId;
+        // slug = just the text part after the matchId, e.g. "pbks-vs-lsg-29th-match-..."
+        const hrefParts = href.split('/live-cricket-scores/')[1] || '';
+        parsed.slug = hrefParts.includes('/') ? hrefParts.split('/').slice(1).join('/') : hrefParts;
         seenIds.add(matchId);
         matches.push(parsed);
       } else {

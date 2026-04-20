@@ -123,6 +123,59 @@ function modelParamsPayload() {
   };
 }
 
+function buildCsvFromJson(jsonDir, csvPath) {
+  // Generate ipl_innings_snapshots.csv from ball-by-ball JSON files if missing.
+  if (!fs.existsSync(jsonDir)) return;
+  const files = fs.readdirSync(jsonDir).filter(f => f.endsWith('.json'));
+  const rows = ['team,balls_bowled,overs_completed,overs_remaining,wickets,run_rate,current_score,final_total,match_file'];
+
+  for (const fname of files) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(jsonDir, fname), 'utf8'));
+      const info = data.info || {};
+      const dates = info.dates || [];
+      if (!dates.length) continue;
+      const year = parseInt(dates[0].slice(0, 4), 10);
+      if (year < MIN_DATA_YEAR) continue;
+      if (!info.outcome) continue;
+
+      const innings = data.innings || [];
+      for (const inn of innings) {
+        const team = inn.team || '';
+        let score = 0, wickets = 0, balls = 0;
+        let finalTotal = 0;
+
+        // First pass: get final total
+        for (const over of (inn.overs || [])) {
+          for (const ball of (over.deliveries || [])) {
+            finalTotal += ball.runs.total;
+          }
+        }
+
+        // Second pass: emit one row per ball
+        for (const over of (inn.overs || [])) {
+          const overNum = over.over;
+          let legalInOver = 0;
+          for (const ball of (over.deliveries || [])) {
+            score += ball.runs.total;
+            if (ball.wickets) wickets += ball.wickets.length;
+            const extras = ball.extras || {};
+            if (!extras.wides && !extras.noballs) legalInOver++;
+            balls++;
+            const oc = overNum + legalInOver / 6;
+            const or = Math.max(0, 20 - oc);
+            const rr = oc > 0 ? score / oc : 0;
+            rows.push([team, balls, oc.toFixed(4), or.toFixed(4), wickets, rr.toFixed(4), score, finalTotal, fname].join(','));
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  fs.writeFileSync(csvPath, rows.join('\n') + '\n', 'utf8');
+  console.log(`[recent] built CSV: ${rows.length - 1} rows`);
+}
+
 function parseCsvSnapshots(csvPath) {
   if (!fs.existsSync(csvPath)) return [];
   const raw = fs.readFileSync(csvPath, 'utf8');
@@ -314,6 +367,11 @@ export default function handler(req, res) {
 
     const meta = getMatchMetadata(jsonDir);
     const { recent } = getRecentAndUpcoming(meta, pastDays);
+    // Build CSV on-the-fly if missing (e.g. fresh deploy)
+    if (!fs.existsSync(csvPath)) {
+      console.log('[recent] CSV missing, building from JSON...');
+      buildCsvFromJson(jsonDir, csvPath);
+    }
     const allRows = parseCsvSnapshots(csvPath);
     if (!allRows.length) {
       return res.status(200).json({
