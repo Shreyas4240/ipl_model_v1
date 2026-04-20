@@ -918,14 +918,13 @@
     </section>
 
     <section aria-labelledby="live-ipl-heading">
-      <h2 id="live-ipl-heading">Live IPL Matches</h2>
-      <div class="live-section-meta">
-        <span class="live-updated" id="live-updated"></span>
-        <button class="live-refresh-btn" id="live-refresh-btn" aria-label="Refresh live scores">
-          <span class="live-refresh-spinner"></span>
-        </button>
+      <h2 id="live-ipl-heading">Live IPL matches</h2>
+      <div class="live-controls">
+        <button id="live-refresh-btn" class="btn" aria-label="Refresh live matches">Refresh</button>
+        <button id="cache-clear-btn" class="btn" onclick="clearLiveWinProbCache()" aria-label="Clear corrupted cache">Clear Cache</button>
+        <span id="live-updated" aria-live="polite"></span>
       </div>
-      <p class="loading" id="live-matches-loading">Loading…</p>
+      <div id="live-matches-loading" class="live-loading">Loading live matches...</div>
       <div class="live-match-list" id="live-match-list"></div>
     </section>
 
@@ -1555,6 +1554,31 @@
       try {
         var stored = sessionStorage.getItem('liveWinProbHistory_v2');
         var parsed = stored ? JSON.parse(stored) : {};
+        
+        // Check for corrupted data (same runs/wickets in both innings)
+        var hasCorruptedData = false;
+        Object.keys(parsed).forEach(function(chartId) {
+          var hist = parsed[chartId];
+          if (hist.team1 && hist.team2 && hist.team1.length > 0 && hist.team2.length > 0) {
+            // Check if innings 2 starts with same scores as innings 1
+            var inn1Last = hist.team1[hist.team1.length - 1];
+            var inn2First = hist.team2[0];
+            if (inn1Last && inn2First && inn1Last.x < 20 && inn2First.x >= 20) {
+              // If innings 2 has non-zero runs/wickets at start, it's corrupted
+              if (inn2First.y > 0) {
+                console.log('[liveWinProbHistory] Found corrupted data for', chartId, '- clearing cache');
+                hasCorruptedData = true;
+              }
+            }
+          }
+        });
+        
+        if (hasCorruptedData) {
+          console.log('[liveWinProbHistory] Clearing corrupted cache');
+          sessionStorage.removeItem('liveWinProbHistory_v2');
+          return {};
+        }
+        
         console.log('[liveWinProbHistory] Loaded from sessionStorage:', parsed);
         return parsed;
       } catch(_) { 
@@ -1565,6 +1589,19 @@
 
     function saveWinProbHistory() {
       try { sessionStorage.setItem('liveWinProbHistory_v2', JSON.stringify(liveWinProbHistory)); } catch(_) {}
+    }
+
+    // Manual cache clear for corrupted data
+    function clearLiveWinProbCache() {
+      console.log('[clearLiveWinProbCache] Manually clearing corrupted cache');
+      sessionStorage.removeItem('liveWinProbHistory_v2');
+      liveWinProbHistory = {};
+      // Clear all charts
+      Object.keys(liveWinProbCharts).forEach(function(chartId) {
+        try { liveWinProbCharts[chartId].destroy(); } catch(_) {}
+        delete liveWinProbCharts[chartId];
+      });
+      console.log('[clearLiveWinProbCache] Cache cleared, refresh page to reload fresh data');
     }
 
     /**
