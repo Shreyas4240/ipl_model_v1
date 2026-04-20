@@ -96,10 +96,18 @@ function parseBallByBall(html, currentInnings = 1) {
     let cumWickets = 0;
     let ballSeq = 0; // global ball counter for this innings
 
-    inn.forEach(blk => {
+    inn.forEach((blk, blkIdx) => {
       // Set state to start of this over
-      cumRuns = blk.startRuns;
-      cumWickets = blk.startWickets;
+      if (innIdx === 0) {
+        // Innings 1: use absolute scores
+        cumRuns = blk.startRuns;
+        cumWickets = blk.startWickets;
+      } else {
+        // Innings 2: use incremental scores from this over's start
+        const firstOverInInn = inn[0];
+        cumRuns = blk.startRuns - firstOverInn.startRuns;
+        cumWickets = blk.startWickets - firstOverInn.startWickets;
+      }
 
       const overNum = blk.overNum;
       let legalInOver = 0;
