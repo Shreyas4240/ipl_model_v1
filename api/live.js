@@ -71,8 +71,8 @@ function parseRichCard(text) {
   const pos1  = abbrPositions[0].pos;
   const pos2  = abbrPositions[1].pos;
 
-  // Score pattern: RUNS-WICKETS (OVERS)  e.g. "29-0 (3.2)" or "175-8 (20)"
-  const scoreRe = /(\d+)-(\d+)\s*\(([\d.]+)\)/g;
+  // Score pattern: RUNS-WICKETS (OVERS) or RUNS (OVERS) for all out  e.g. "29-0 (3.2)", "175-8 (20)", or "119 (18.4)"
+  const scoreRe = /(\d+)(?:-(\d+))?\s*\(([\d.]+)\)/g;
 
   // Scores in the segment after abbr1 up to abbr2
   const seg1 = text.slice(pos1, pos2);
@@ -85,14 +85,14 @@ function parseRichCard(text) {
   const inn1 = m1 ? {
     team: ABBR_TO_TEAM[abbr1],
     runs: parseInt(m1[1]),
-    wickets: parseInt(m1[2]),
+    wickets: m1[2] ? parseInt(m1[2]) : 10,
     overs: m1[3],
   } : null;
 
   const inn2 = m2 ? {
     team: ABBR_TO_TEAM[abbr2],
     runs: parseInt(m2[1]),
-    wickets: parseInt(m2[2]),
+    wickets: m2[2] ? parseInt(m2[2]) : 10,
     overs: m2[3],
   } : null;
 
@@ -142,7 +142,7 @@ function parseRichCard(text) {
   };
 }
 
-module.exports = async function handler(req, res) {
+async function getLiveMatchesData() {
   console.log(`[live] called at ${new Date().toISOString()}`);
   try {
     const listResp = await axios.get(LIVE_URL, { headers: HEADERS, timeout: 15000 });
@@ -228,10 +228,22 @@ module.exports = async function handler(req, res) {
     }
 
     console.log(`[live] returning ${matches.length} matches`);
-    return res.status(200).json({ matches: matches.slice(0, 3) });
+    return { matches: matches.slice(0, 3) };
 
   } catch (err) {
     console.error('[live] error:', err.message);
+    throw err;
+  }
+}
+
+async function handler(req, res) {
+  try {
+    const data = await getLiveMatchesData();
+    return res.status(200).json(data);
+  } catch (err) {
     return res.status(500).json({ error: err.message, matches: [] });
   }
-};
+}
+
+module.exports = handler;
+module.exports.getLiveMatchesData = getLiveMatchesData;

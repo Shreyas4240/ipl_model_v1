@@ -564,6 +564,23 @@
     @keyframes conicSpin {
       to { transform: rotate(360deg); }
     }
+    .live-cache-btn {
+      background: none;
+      border: 1.5px solid var(--border-2);
+      border-radius: 4px;
+      padding: 0.2rem 0.55rem;
+      color: var(--text-3);
+      font-family: 'Sora', sans-serif;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      height: 1.6rem;
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .live-cache-btn:hover { border-color: var(--text); color: var(--text); }
     .subtitle code {
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85em;
@@ -918,13 +935,19 @@
     </section>
 
     <section aria-labelledby="live-ipl-heading">
-      <h2 id="live-ipl-heading">Live IPL matches</h2>
-      <div class="live-controls">
-        <button id="live-refresh-btn" class="live-refresh-btn" aria-label="Refresh live matches">Refresh</button>
-        <button id="cache-clear-btn" class="live-refresh-btn" onclick="clearLiveWinProbCache()" aria-label="Clear corrupted cache">Clear Cache</button>
-        <span id="live-updated" aria-live="polite"></span>
+      <h2 id="live-ipl-heading">Live IPL Matches</h2>
+      <div class="live-section-meta">
+        <span class="live-updated" id="live-updated"></span>
+        <div style="display:flex;align-items:center;gap:0.4rem;">
+          <button class="live-cache-btn" id="cache-clear-btn" onclick="clearLiveWinProbCache()" aria-label="Clear win probability cache">
+            Clear graph
+          </button>
+          <button class="live-refresh-btn" id="live-refresh-btn" aria-label="Refresh live scores">
+            <span class="live-refresh-spinner"></span>
+          </button>
+        </div>
       </div>
-      <div id="live-matches-loading" class="live-loading">Loading live matches...</div>
+      <p class="loading" id="live-matches-loading">Loading…</p>
       <div class="live-match-list" id="live-match-list"></div>
     </section>
 
@@ -1548,11 +1571,10 @@
     const liveWinProbCharts = {};
 
     // Persistent history: chartId -> { team1: [{x,y},...], team2: [{x,y},...], lastX: number }
-    // Points are only ever appended, never recomputed.
     // Survives page reloads via sessionStorage (same tab session = same match day).
     var liveWinProbHistory = (function() {
       try {
-        var stored = sessionStorage.getItem('liveWinProbHistory_v2');
+        var stored = sessionStorage.getItem('liveWinProbHistory_v4');
         var parsed = stored ? JSON.parse(stored) : {};
         
         // Check for corrupted data (same runs/wickets in both innings)
@@ -1575,7 +1597,7 @@
         
         if (hasCorruptedData) {
           console.log('[liveWinProbHistory] Clearing corrupted cache');
-          sessionStorage.removeItem('liveWinProbHistory_v2');
+          sessionStorage.removeItem('liveWinProbHistory_v4');
           return {};
         }
         
@@ -1588,13 +1610,13 @@
     })();
 
     function saveWinProbHistory() {
-      try { sessionStorage.setItem('liveWinProbHistory_v2', JSON.stringify(liveWinProbHistory)); } catch(_) {}
+      try { sessionStorage.setItem('liveWinProbHistory_v4', JSON.stringify(liveWinProbHistory)); } catch(_) {}
     }
 
     // Manual cache clear for corrupted data
     function clearLiveWinProbCache() {
       console.log('[clearLiveWinProbCache] Manually clearing corrupted cache');
-      sessionStorage.removeItem('liveWinProbHistory_v2');
+      sessionStorage.removeItem('liveWinProbHistory_v4');
       liveWinProbHistory = {};
       // Clear all charts
       Object.keys(liveWinProbCharts).forEach(function(chartId) {
@@ -1602,6 +1624,17 @@
         delete liveWinProbCharts[chartId];
       });
       console.log('[clearLiveWinProbCache] Cache cleared, refresh page to reload fresh data');
+    }
+
+    /**
+     * Determine the current over exact decimal for ball-by-ball
+     */
+    function oversToDecimal(oversStr) {
+      if (!oversStr) return 0;
+      const parts = String(oversStr).split('.');
+      const whole = parseInt(parts[0], 10) || 0;
+      const balls = parts[1] ? parseInt(parts[1], 10) : 0;
+      return parseFloat((whole + (balls / 6)).toFixed(3));
     }
 
     /**
@@ -1631,15 +1664,6 @@
       const c = chartColors();
       const color1 = dark ? 'rgba(250,250,250,0.7)' : 'rgba(10,10,10,0.6)';
       const color2 = dark ? '#4ade80' : '#16a34a';
-
-      // Determine the current over exact decimal for ball-by-ball
-      function oversToDecimal(oversStr) {
-        if (!oversStr) return 0;
-        const parts = String(oversStr).split('.');
-        const whole = parseInt(parts[0], 10) || 0;
-        const balls = parts[1] ? parseInt(parts[1], 10) : 0;
-        return parseFloat((whole + (balls / 6)).toFixed(3));
-      }
 
       var currentX, curP1, curP2;
       if (inn2 && inn2.overs != null) {
@@ -1851,8 +1875,10 @@
       const hist = liveWinProbHistory[canvasId];
 
       // Get current live over to filter future balls
+      // Get current live over to filter future balls (innings 2 is 20-40)
       const currentInn = inn2 || inn1;
-      const currentOver = currentInn ? oversToDecimal(currentInn.overs || '0') : 0;
+      let currentOver = currentInn ? oversToDecimal(currentInn.overs || '0') : 0;
+      if (inn2) currentOver += 20;
       console.log('[updateChartFromBalls] Current live over:', currentOver, 'filtering balls up to this point');
 
       var appended = false;
@@ -2024,7 +2050,7 @@
         // Win probability chart — for live matches with at least 1st innings data
         let winProbChartHtml = '';
         const chartId = 'wp-chart-' + (teams.join('-').replace(/\s+/g, '').toLowerCase());
-        if (status === 'live' && inn1 && inn1.overs != null) {
+        if ((status === 'live' || status === 'completed') && inn1 && inn1.overs != null) {
           const abbr1 = teamAbbr[bat1Team] || bat1Team.split(' ').map(function(w){return w[0];}).join('');
           const abbr2 = teamAbbr[bat2Team] || bat2Team.split(' ').map(function(w){return w[0];}).join('');
           const vAvg = venueAvgTotal(m.venue || '');
@@ -2153,20 +2179,17 @@
     }
 
     function loadLiveMatches() {
-      console.log('[loadLiveMatches] Starting...');
       const loading = document.getElementById('live-matches-loading');
       const btn = document.getElementById('live-refresh-btn');
-      loading.textContent = 'Loading...';
+      if (loading) loading.textContent = 'Loading…';
       if (btn) { btn.disabled = true; btn.classList.add('loading'); }
 
       fetch('/api/live')
         .then(function (r) {
-          console.log('[loadLiveMatches] API response status:', r.status);
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         })
         .then(function(data) {
-          console.log('[loadLiveMatches] Live matches data:', data);
           liveLastFetched = Date.now();
           tickLiveAge();
           renderLiveMatches(data);

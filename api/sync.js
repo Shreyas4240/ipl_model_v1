@@ -1,29 +1,22 @@
-const getLiveMatches = require('./live');
+const { getLiveMatchesData } = require('./live');
 const { fetchAndMergeScorecard } = require('./scorecard');
 
 module.exports = async function handler(req, res) {
   try {
-    const resMock = {
-      statusCode: 200,
-      data: null,
-      status: function(code) { this.statusCode = code; return this; },
-      json: function(data) { this.data = data; return this; }
-    };
-    
     console.log('[sync] Calling live handler internally...');
-    await getLiveMatches({}, resMock);
+    const liveData = await getLiveMatchesData();
     
-    if (resMock.statusCode !== 200 || !resMock.data || !resMock.data.matches) {
+    if (!liveData || !liveData.matches) {
        return res.status(500).json({ success: false, msg: 'Failed to fetch internal live matches' });
     }
     
-    const matches = resMock.data.matches;
-    const liveMatches = matches.filter(m => m.status === 'live' && m.matchId && m.slug);
-    console.log(`[sync] Found ${liveMatches.length} live matches to sync`);
+    const matches = liveData.matches;
+    const liveMatches = matches.filter(m => (m.status === 'live' || m.status === 'completed') && m.matchId && m.slug);
+    console.log(`[sync] Found ${liveMatches.length} live/completed matches to sync`);
     
     for (const m of liveMatches) {
         console.log(`[sync] Syncing ${m.matchId}/${m.slug}...`);
-        await fetchAndMergeScorecard(m.matchId, m.slug, m.innings2 ? 2 : 1);
+        await fetchAndMergeScorecard(m.matchId, m.slug);
     }
     
     return res.status(200).json({ success: true, synced: liveMatches.length });
