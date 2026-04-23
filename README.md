@@ -41,6 +41,52 @@ extended_essay_model/
 - **Win Probability Prediction**: ML-based predictions with momentum features
 - **Momentum Analysis**: Recent ball-by-ball performance tracking
 - **Venue-Specific Stats**: Location-based performance adjustments
+- **Database System**: Server-side ball-by-ball data storage with Redis
+
+## Database System
+
+### Overview
+The project includes a robust database system for storing live match data in Upstash Redis:
+
+- **JSON Instance**: `match_history_v2_{matchId}` per match
+- **Data Source**: Cricbuzz scraper with real-time updates
+- **Format**: Ball-by-ball JSON with innings, over, runs, wickets
+- **Isolation**: Each match has separate Redis key (no cross-contamination)
+- **Server-Side**: Works 24/7 without user's computer
+
+### API Endpoints
+- `/api/live` - Live match data with team scores
+- `/api/scorecard` - Ball-by-ball data storage and retrieval
+- `/api/scorecard/clear` - Clear match data from Redis
+
+### Setup Instructions
+
+1. **Environment Variables** (add to `.env`):
+   ```
+   KV_REST_API_URL=your_upstash_redis_url
+   KV_REST_API_TOKEN=your_upstash_redis_token
+   REDIS_URL=your_redis_connection_string
+   ```
+
+2. **Dependencies**: `pip install -r requirements.txt`
+
+3. **Local Development**: `python scripts/app.py`
+
+4. **Production Deploy**: `vercel --prod`
+
+5. **Security**: `.env` file is excluded from git (see `.gitignore`)
+
+### Data Structure
+```json
+{
+  "innings": 2,
+  "ball": 1,
+  "over": 1.5,
+  "overLabel": "1.3",
+  "runs": 45,
+  "wickets": 1
+}
+```
 
 ## Quick Start
 
