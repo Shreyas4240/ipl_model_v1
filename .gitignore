@@ -2,3 +2,7 @@
 node_modules/
 .DS_Store
 ops/logs/
+.env
+*.log
+__pycache__/
+
