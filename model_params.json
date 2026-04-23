@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "generated_at_utc": "2026-04-23T14:17:29.570416+00:00",
+  "min_match_date": "2023-01-01",
+  "max_overs": 20,
+  "max_wickets": 10,
+  "rr_shrinkage": {
+    "alpha_by_phase": [
+      0.12964914855219153,
+      0.3559590218392213,
+      0.5993537214991888
+    ],
+    "mu_by_phase": [
+      7.985473465943516,
+      8.557526283515049,
+      8.699457741203823
+    ],
+    "phase_labels": [
+      "Overs 1\u20136",
+      "Overs 7\u201316",
+      "Overs 17\u201320"
+    ],
+    "formula": "RR_eff = \u03b1_k\u00d7RR + (1\u2212\u03b1_k)\u00d7\u03bc_k; k = same segment as resource phase"
+  },
+  "resource_model": {
+    "phase_labels": [
+      "Overs 1\u20136",
+      "Overs 7\u201316",
+      "Overs 17\u201320"
+    ],
+    "phases": [
+      {
+        "id": "pp1_6",
+        "label": "Overs 1\u20136",
+        "C": 35.000393608362984,
+        "b": 0.051125273700585616,
+        "a_w": 0.01447809069398252
+      },
+      {
+        "id": "pp7_16",
+        "label": "Overs 7\u201316",
+        "C": 30.001243107590586,
+        "b": 0.05334100809020904,
+        "a_w": 0.005374324533747193
+      },
+      {
+        "id": "pp17_20",
+        "label": "Overs 17\u201320",
+        "C": 44.999973439211296,
+        "b": 0.04188292684258315,
+        "a_w": 0.003797606930833553
+      }
+    ],
+    "wicket_gamma": 2.2023069409780103,
+    "phase_blend_overs": 0.5,
+    "formula": "R = C_k*(1-exp(-b_k*overs_remaining))*exp(-a_k*wickets_lost^gamma), blended near 6 and 16 overs"
+  },
+  "phases": [
+    {
+      "id": "pp1_6",
+      "label": "Overs 1\u20136",
+      "Z0": 1.4674909625251,
+      "a": 0.010196766736377847
+    },
+    {
+      "id": "pp7_16",
+      "label": "Overs 7\u201316",
+      "Z0": 1.2242229909566293,
+      "a": 0.017458383272432664
+    },
+    {
+      "id": "pp17_20",
+      "label": "Overs 17\u201320",
+      "Z0": 2.0195744534445343,
+      "a": 0.018361597402085098
+    }
+  ],
+  "fit_metrics": {
+    "rr_shrink_mae_objective": 26.521561334252308,
+    "resource_v2_mae_objective": 17.77778713978268,
+    "resource_v2_optimizer_success": true
+  },
+  "update_stats": {
+    "matches_in_training": 245,
+    "rows_in_training": 17233,
+    "added": 0,
+    "updated": 0,
+    "unchanged": 1201
+  }
+}
