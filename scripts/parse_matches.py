@@ -20,12 +20,18 @@ import os
 import argparse
 from collections import deque
 import pandas as pd
+from pathlib import Path
+try:
+    from score_projection import load_model_params, project_final_score
+except ModuleNotFoundError:
+    from scripts.score_projection import load_model_params, project_final_score
 
 # Illegal extras that do NOT count as a legal delivery
 ILLEGAL_EXTRAS = {"wides", "noballs"}
 
 # Outcome keys that mean "no result" (abandoned, tie needing super over)
 NO_RESULT_OUTCOMES = {"no result", "tie"}
+MODEL_PARAMS = load_model_params(Path(__file__).resolve().parents[1])
 
 
 def is_legal_delivery(delivery: dict) -> bool:
@@ -146,6 +152,17 @@ def _build_row(
 
     # How target compares to venue average (pitch difficulty proxy)
     target_vs_venue_avg = target_runs - venue_avg_first_innings
+    overs_completed = legal_balls / 6.0
+    overs_remaining = balls_remaining / 6.0
+    projected_final = project_final_score(
+        current_score=runs,
+        run_rate=crr,
+        overs_remaining=overs_remaining,
+        wickets_lost=wickets,
+        overs_completed=overs_completed,
+        model_params=MODEL_PARAMS,
+    )
+    projected_margin = projected_final - target_runs
 
     return {
         # Identifiers
@@ -181,6 +198,8 @@ def _build_row(
         "venue_avg_first_innings": venue_avg_first_innings,
         "venue_chasing_efficiency": venue_chasing_efficiency,
         "target_vs_venue_avg": round(target_vs_venue_avg, 2),
+        "projected_final_score": round(projected_final, 2),
+        "projected_margin": round(projected_margin, 2),
 
         # Target context
         "target_runs": target_runs,

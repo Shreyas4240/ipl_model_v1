@@ -1,0 +1,22 @@
+{
+  "name": "ipl-score-prediction-model",
+  "version": "1.0.0",
+  "description": "IPL score prediction model with live match data",
+  "main": "api/live.js",
+  "dependencies": {
+    "axios": "^1.15.2",
+    "cheerio": "^1.2.0"
+  },
+  "scripts": {
+    "start": "node api/live.js",
+    "test": "node -e \"require('./api/live.js').getLiveMatchesData().then(console.log)\""
+  },
+  "keywords": [
+    "ipl",
+    "cricket",
+    "live-scores",
+    "prediction"
+  ],
+  "author": "",
+  "license": "MIT"
+}

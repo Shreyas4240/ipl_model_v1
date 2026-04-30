@@ -1613,17 +1613,12 @@
       try { sessionStorage.setItem('liveWinProbHistory_v4', JSON.stringify(liveWinProbHistory)); } catch(_) {}
     }
 
-    // Manual cache clear for corrupted data
-    function clearLiveWinProbCache() {
-      console.log('[clearLiveWinProbCache] Manually clearing corrupted cache');
-      sessionStorage.removeItem('liveWinProbHistory_v4');
-      liveWinProbHistory = {};
-      // Clear all charts
-      Object.keys(liveWinProbCharts).forEach(function(chartId) {
-        try { liveWinProbCharts[chartId].destroy(); } catch(_) {}
-        delete liveWinProbCharts[chartId];
-      });
-      console.log('[clearLiveWinProbCache] Cache cleared, refresh page to reload fresh data');
+    // Simple cache clear function
+    function clearCache() {
+      console.log('[clearCache] Clearing cache');
+      localStorage.clear();
+      sessionStorage.clear();
+      loadLiveMatches();
     }
 
     /**
@@ -1641,7 +1636,7 @@
      * Update (or create) the win-probability chart for a live match.
      * Only appends the current over's point — never rewrites history.
      */
-    function buildWinProbChart(canvasId, inn1, inn2, abbr1, abbr2, status, vAvg) {
+    function buildWinProbChart(canvasId, inn1, inn2, abbr1, abbr2, status, vAvg, allowHeuristicAppend) {
       const canvas = document.getElementById(canvasId);
       console.log('[buildWinProbChart] Canvas found:', !!canvas, 'Chart available:', typeof Chart !== 'undefined');
       if (!canvas) {
@@ -1668,7 +1663,7 @@
       var currentX, curP1, curP2;
       if (inn2 && inn2.overs != null) {
         const oc2 = oversToDecimal(inn2.overs);
-        currentX = 20 + oc2;
+        currentX = oc2;
         const p2 = chaseWinProb(inn2.runs, inn2.wickets != null ? inn2.wickets : 0, oc2, target);
         curP2 = Math.round(p2 * 100);
         curP1 = 100 - curP2;
@@ -1690,7 +1685,7 @@
       console.log('[buildWinProbChart] History for', canvasId, ':', hist);
 
       // Only append if this is a new over we haven't recorded yet
-      if (currentX > hist.lastX && currentX > 0) {
+      if ((allowHeuristicAppend !== false) && currentX > hist.lastX && currentX > 0) {
         console.log('[buildWinProbChart] Adding point at over:', currentX, 'win%:', curP1, '/', curP2);
         hist.team1.push({ x: currentX, y: curP1 });
         hist.team2.push({ x: currentX, y: curP2 });
@@ -1754,22 +1749,19 @@
             x: {
               type: 'linear',
               min: 0,
-              max: 40,
+              max: 20,
               grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
               border: { display: false },
               ticks: {
                 color: c.text,
                 font: { family: 'IBM Plex Mono', size: 8 },
-                maxTicksLimit: 9,
+                maxTicksLimit: 6,
                 callback: function(v) {
-                  if (v === 6) return '6';
+                  if (v === 0) return '0';
+                  if (v === 5) return '5';
                   if (v === 10) return '10';
-                  if (v === 16) return '16';
+                  if (v === 15) return '15';
                   if (v === 20) return '20';
-                  if (v === 26) return '26';
-                  if (v === 30) return '30';
-                  if (v === 36) return '36';
-                  if (v === 40) return '40';
                   return '';
                 },
               },
@@ -1803,14 +1795,11 @@
                 title: function(items) {
                   const x = items[0].parsed.x;
                   if (x === 0) return 'Start';
-                  // Snap display to nearest completed over
-                  const inn = x > 20 ? 2 : 1;
-                  const ov = inn === 2 ? (x - 20) : x;
-                  const ovInt = Math.floor(ov);
-                  const balls = Math.round((ov - ovInt) * 6);
+                  const ovInt = Math.floor(x);
+                  const balls = Math.round((x - ovInt) * 10);
                   return balls > 0
-                    ? 'Inn ' + inn + ' · Ov ' + ovInt + '.' + balls
-                    : 'Inn ' + inn + ' · Ov ' + ovInt;
+                    ? 'Ov ' + ovInt + '.' + balls
+                    : 'Ov ' + ovInt;
                 },
                 label: function(item) {
                   return ' ' + item.dataset.label + ': ' + item.parsed.y + '%';
@@ -1862,10 +1851,94 @@
     }
 
     /**
-     * Update the win probability chart using real ball-by-ball data from /api/scorecard.
-     * Computes win prob for every ball and appends only new ones to the history.
+     * Client-side Monte Carlo win probability simulator.
+     * Downloads winprob_sim_model.json once, then runs all sims locally — no API calls per ball.
      */
-    function updateChartFromBalls(canvasId, balls, inn1, inn2, abbr1, abbr2, vAvg) {
+    var _winprobModel = null;
+    var _winprobModelPromise = null;
+
+    function loadWinprobModel() {
+      if (_winprobModel) return Promise.resolve(_winprobModel);
+      if (_winprobModelPromise) return _winprobModelPromise;
+      _winprobModelPromise = fetch('/data/winprob_sim_model.json')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(m) { _winprobModel = m; return m; })
+        .catch(function() { return null; });
+      return _winprobModelPromise;
+    }
+
+    var OUTCOMES = ['W', '0', '1', '2', '3', '4', '6'];
+
+    function _rrrBucket(rrr) {
+      if (rrr < 6) return 'lt6';
+      if (rrr < 8) return '6_8';
+      if (rrr < 10) return '8_10';
+      if (rrr < 12) return '10_12';
+      return 'ge12';
+    }
+    function _ballsBucket(br) {
+      if (br > 90) return '91_120';
+      if (br > 60) return '61_90';
+      if (br > 30) return '31_60';
+      return '1_30';
+    }
+    function _phaseFromBall(ball) {
+      var over = Math.floor((ball - 1) / 6);
+      if (over < 6) return 'pp';
+      if (over < 15) return 'mid';
+      return 'death';
+    }
+    function _oversToBalls(oversInput) {
+      var s = String(oversInput || '0').trim().split('.');
+      var ov = parseInt(s[0] || '0') || 0;
+      var b = parseInt(s[1] || '0') || 0;
+      return ov * 6 + Math.min(Math.max(b, 0), 5);
+    }
+    function _weightedSample(probMap) {
+      var u = Math.random(), c = 0;
+      for (var i = 0; i < OUTCOMES.length; i++) {
+        c += Number(probMap[OUTCOMES[i]] || 0);
+        if (u <= c) return OUTCOMES[i];
+      }
+      return '0';
+    }
+    function _simulateOnce(model, runs, wickets, target, legalBalls) {
+      var r = runs, w = wickets, b = legalBalls;
+      while (b < 120 && w < 10 && r < target) {
+        var br = 120 - b;
+        var rn = Math.max(0, target - r);
+        var rrr = br > 0 ? (rn / br) * 6 : 99;
+        var key = _phaseFromBall(b + 1) + '|' + Math.min(10, Math.max(0, w)) + '|' + _rrrBucket(rrr) + '|' + _ballsBucket(br);
+        var row = model.table[key];
+        var probs = (row && row.n >= 15) ? row.probs : model.global_probs;
+        var out = _weightedSample(probs);
+        if (out === 'W') { w++; } else { r += Number(out); }
+        b++;
+      }
+      return r >= target ? 1 : 0;
+    }
+
+    var simWinProbCache = {};
+    function getSimWinProb(runs, wickets, overs, target) {
+      var key = [runs, wickets, overs, target].join('|');
+      if (simWinProbCache[key] !== undefined) return Promise.resolve(simWinProbCache[key]);
+      return loadWinprobModel().then(function(model) {
+        if (!model) return null;
+        if (target <= 0) return null;
+        var legalBalls = _oversToBalls(overs);
+        var ballsRemaining = Math.max(0, 120 - legalBalls);
+        var runsNeeded = Math.max(0, target - runs);
+        if (runsNeeded <= 0) { simWinProbCache[key] = 1; return 1; }
+        if (ballsRemaining <= 0 || wickets >= 10) { simWinProbCache[key] = 0; return 0; }
+        var wins = 0, sims = 2500;
+        for (var i = 0; i < sims; i++) wins += _simulateOnce(model, runs, wickets, target, legalBalls);
+        var p = wins / sims;
+        simWinProbCache[key] = p;
+        return p;
+      });
+    }
+
+    async function updateChartFromBalls(canvasId, balls, inn1, inn2, abbr1, abbr2, vAvg) {
       if (!balls || !balls.length) return;
       const target = inn1 ? inn1.runs + 1 : null;
 
@@ -1874,41 +1947,35 @@
       }
       const hist = liveWinProbHistory[canvasId];
 
-      // Get current live over to filter future balls
-      // Get current live over to filter future balls (innings 2 is 20-40)
+      // Filter out balls beyond current live over
       const currentInn = inn2 || inn1;
-      let currentOver = currentInn ? oversToDecimal(currentInn.overs || '0') : 0;
-      if (inn2) currentOver += 20;
-      console.log('[updateChartFromBalls] Current live over:', currentOver, 'filtering balls up to this point');
+      let currentOver = currentInn ? oversToDecimal(currentInn.overs || '0') : 20;
+      console.log('[updateChartFromBalls] Current live over:', currentOver);
 
       var appended = false;
-      balls.forEach(function(b) {
-        // Only process balls up to current live over (not future balls)
-        var ballOver = b.innings === 2 ? 20 + b.over : b.over;
-        if (ballOver > currentOver + 0.1) { // Small buffer for current ball
-          console.log('[updateChartFromBalls] Skipping future ball at over:', ballOver, 'current:', currentOver);
-          return;
-        }
-        var x = b.innings === 2 ? 20 + b.over : b.over;
-        x = parseFloat(x.toFixed(4));
-        if (x <= hist.lastX) return;
+      for (const b of balls) {
+        // Only plot innings 2 balls (win prob is only meaningful for the chase)
+        if (b.innings !== 2) continue;
+        var ballOver = b.over;
+        if (ballOver > currentOver + 0.1) continue;
+        var x = parseFloat(b.over.toFixed(4));
+        if (x <= hist.lastX) continue;
 
         var p1, p2;
         if (b.innings === 2 && target != null) {
-          var p2val = chaseWinProb(b.runs, b.wickets, b.over, target);
+          var p2val = await getSimWinProb(b.runs, b.wickets, b.over, target);
+          if (p2val == null) continue;
           p2 = Math.round(p2val * 100);
           p1 = 100 - p2;
         } else {
-          var p1val = inn1WinProb(b.runs, b.wickets, b.over, vAvg);
-          p1 = Math.round(p1val * 100);
-          p2 = 100 - p1;
+          continue;
         }
 
         hist.team1.push({ x: x, y: p1 });
         hist.team2.push({ x: x, y: p2 });
         hist.lastX = x;
         appended = true;
-      });
+      }
 
       if (appended) {
         saveWinProbHistory();
@@ -1927,7 +1994,7 @@
       } else {
         const lastBall = balls[balls.length - 1];
         const fakeInn1 = inn1 || { runs: lastBall.runs, wickets: lastBall.wickets, overs: String(lastBall.over) };
-        buildWinProbChart(canvasId, fakeInn1, inn2, abbr1, abbr2, 'live', vAvg);
+        buildWinProbChart(canvasId, fakeInn1, inn2, abbr1, abbr2, 'live', vAvg, false);
         const chart = liveWinProbCharts[canvasId];
         if (chart) {
           chart.data.datasets[0].data = hist.team1.slice();
@@ -2004,23 +2071,6 @@
         );
       }
 
-      // Collect chart render jobs — must run after innerHTML is set
-      const chartJobs = [];
-
-      // Clear history for matches no longer in the response
-      const activeChartIds = new Set();
-      matches.forEach(function(m) {
-        const teams = m.teams || [];
-        activeChartIds.add('wp-chart-' + (teams.join('-').replace(/\s+/g, '').toLowerCase()));
-      });
-      Object.keys(liveWinProbHistory).forEach(function(id) {
-        if (!activeChartIds.has(id)) {
-          delete liveWinProbHistory[id];
-          if (liveWinProbCharts[id]) { liveWinProbCharts[id].destroy(); delete liveWinProbCharts[id]; }
-        }
-      });
-      saveWinProbHistory();
-
       function pClass(p) { return p >= 60 ? 'high' : p >= 40 ? 'mid' : 'low'; }
 
       wrap.innerHTML = matches.map(function(m) {
@@ -2047,62 +2097,15 @@
           : status === 'upcoming' ? 'Match not started'
           : resultText || '';
 
-        // Win probability chart — for live matches with at least 1st innings data
-        let winProbChartHtml = '';
-        const chartId = 'wp-chart-' + (teams.join('-').replace(/\s+/g, '').toLowerCase());
-        if ((status === 'live' || status === 'completed') && inn1 && inn1.overs != null) {
-          const abbr1 = teamAbbr[bat1Team] || bat1Team.split(' ').map(function(w){return w[0];}).join('');
-          const abbr2 = teamAbbr[bat2Team] || bat2Team.split(' ').map(function(w){return w[0];}).join('');
-          const vAvg = venueAvgTotal(m.venue || '');
-
-          // Compute current win probability
-          var curP1, curP2;
-          if (inn2 && inn2.overs != null) {
-            var oc2 = parseFloat(inn2.overs) || 0;
-            var tgt = inn1.runs + 1;
-            var p2 = chaseWinProb(inn2.runs, inn2.wickets != null ? inn2.wickets : 0, oc2, tgt);
-            curP2 = Math.round(p2 * 100);
-            curP1 = 100 - curP2;
-          } else {
-            var oc1 = parseFloat(inn1.overs) || 0;
-            var p1 = inn1WinProb(inn1.runs, inn1.wickets != null ? inn1.wickets : 0, oc1, vAvg);
-            curP1 = Math.round(p1 * 100);
-            curP2 = 100 - curP1;
-          }
-
-          winProbChartHtml = (
-            '<div class="win-prob-chart-wrap">' +
-              '<div class="win-prob-chart-title">' +
-                '<span class="win-prob-chart-label">Win probability</span>' +
-                '<span class="win-prob-chart-teams">' +
-                  '<span class="win-prob-legend-item">' +
-                    '<span class="win-prob-legend-dot" style="background:' + (getTheme()==='dark'?'rgba(250,250,250,0.7)':'rgba(10,10,10,0.6)') + '"></span>' +
-                    abbr1 +
-                    ' <strong class="win-prob-live-pct ' + pClass(curP1) + '">' + curP1 + '%</strong>' +
-                  '</span>' +
-                  '<span class="win-prob-legend-item">' +
-                    '<span class="win-prob-legend-dot" style="background:' + (getTheme()==='dark'?'#4ade80':'#16a34a') + '"></span>' +
-                    abbr2 +
-                    ' <strong class="win-prob-live-pct ' + pClass(curP2) + '">' + curP2 + '%</strong>' +
-                  '</span>' +
-                '</span>' +
-              '</div>' +
-              '<div class="win-prob-canvas-wrap">' +
-                '<canvas id="' + chartId + '"></canvas>' +
-              '</div>' +
-              '<div class="win-prob-note">model-based · not a market probability</div>' +
-            '</div>'
-          );
-          // Schedule chart build after DOM is ready
-          chartJobs.push({ chartId: chartId, inn1: inn1, inn2: inn2, abbr1: abbr1, abbr2: abbr2, status: status, vAvg: vAvg, matchId: m.matchId || '', slug: m.slug || '' });
-        }
-
+        
         const predInn = inn2 || inn1;
         const canPredict = predInn && predInn.runs != null && predInn.overs != null;
         const predRuns = predInn ? (predInn.runs != null ? predInn.runs : '') : '';
         const predWkts = predInn ? (predInn.wickets != null ? predInn.wickets : '') : '';
         const predOvers = predInn ? (predInn.overs || '') : '';
 
+        const canChart = (status === 'live' || status === 'completed') && inn1 && inn1.runs != null && m.matchId && m.slug;
+        const chartId = 'wp-' + (m.matchId || Math.random().toString(36).slice(2));
         return (
           '<article class="live-match-card">' +
             '<div class="live-card-topbar">' +
@@ -2113,13 +2116,28 @@
               row1Html +
               '<div class="team-row-divider"></div>' +
               row2Html +
-              (winProbChartHtml || (statusLine ? '<div class="live-card-result' + (isWin ? ' result-win' : '') + '">' + statusLine + '</div>' : '')) +
+              (statusLine ? '<div class="live-card-result' + (isWin ? ' result-win' : '') + '">' + statusLine + '</div>' : '') +
+              (canChart
+                ? (
+                  '<div class="win-prob-chart-wrap">' +
+                    '<div class="win-prob-chart-title">' +
+                      '<span class="win-prob-chart-label">Simulator Win Probability</span>' +
+                    '</div>' +
+                    '<div class="win-prob-canvas-wrap"><canvas id="' + chartId + '"></canvas></div>' +
+                  '</div>'
+                )
+                : '') +
             '</div>' +
             '<div class="live-card-footer">' +
               '<button class="live-match-btn"' +
                 ' data-runs="' + predRuns + '"' +
                 ' data-wickets="' + predWkts + '"' +
                 ' data-overs="' + predOvers + '"' +
+                ' data-match-id="' + (m.matchId || '') + '"' +
+                ' data-match-slug="' + (m.slug || '') + '"' +
+                ' data-chart-id="' + chartId + '"' +
+                ' data-team1-abbr="' + (teamAbbr[team1] || team1) + '"' +
+                ' data-team2-abbr="' + (teamAbbr[team2] || team2) + '"' +
                 (canPredict ? '' : ' disabled') + '>' +
                 (canPredict ? '↑ Load into predictor' : 'No score data yet') +
               '</button>' +
@@ -2128,34 +2146,23 @@
         );
       }).join('');
 
-      // Build charts now that canvases are in the DOM
-      chartJobs.forEach(function(job) {
-        // Capture canvas reference NOW — before any async work
-        var canvasAtDispatch = document.getElementById(job.chartId);
-        if (!canvasAtDispatch) return;
-
-        if (job.matchId && job.slug) {
-          fetch('/api/scorecard?matchId=' + job.matchId + '&slug=' + encodeURIComponent(job.slug) + '&currentInnings=' + (job.inn2 ? 2 : 1))
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-              // Only proceed if the canvas is still the same node we captured
-              var canvasNow = document.getElementById(job.chartId);
-              if (!canvasNow || canvasNow !== canvasAtDispatch) return;
-              if (data.balls && data.balls.length) {
-                updateChartFromBalls(job.chartId, data.balls, job.inn1, job.inn2, job.abbr1, job.abbr2, job.vAvg);
-              } else {
-                buildWinProbChart(job.chartId, job.inn1, job.inn2, job.abbr1, job.abbr2, job.status, job.vAvg);
-              }
-            })
-            .catch(function() {
-              var canvasNow = document.getElementById(job.chartId);
-              if (!canvasNow || canvasNow !== canvasAtDispatch) return;
-              buildWinProbChart(job.chartId, job.inn1, job.inn2, job.abbr1, job.abbr2, job.status, job.vAvg);
-            });
-        } else {
-          buildWinProbChart(job.chartId, job.inn1, job.inn2, job.abbr1, job.abbr2, job.status, job.vAvg);
-        }
+      // Hydrate simulator charts from scorecard balls.
+      matches.forEach(function(m) {
+        const status = m.status || 'unknown';
+        if (!(status === 'live' || status === 'completed')) return;
+        if (!m.matchId || !m.slug || !m.innings1 || m.innings1.runs == null) return;
+        const chartId = 'wp-' + m.matchId;
+        const team1 = (m.teams || [])[0] || 'Team 1';
+        const team2 = (m.teams || [])[1] || 'Team 2';
+        const abbr1 = teamAbbr[team1] || team1;
+        const abbr2 = teamAbbr[team2] || team2;
+        const url = '/api/scorecard?matchId=' + encodeURIComponent(m.matchId) + '&slug=' + encodeURIComponent(m.slug) + '&teams=' + encodeURIComponent(JSON.stringify(m.teams || []));
+        fetch(url)
+          .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function(d){ return updateChartFromBalls(chartId, d.balls || [], m.innings1, m.innings2 || null, abbr1, abbr2, venueAvgTotal(m.venue || '')); })
+          .catch(function(){});
       });
+
     }
 
     /* ── LIVE MATCHES: timestamp + refresh ────────────── */
@@ -2184,7 +2191,7 @@
       if (loading) loading.textContent = 'Loading…';
       if (btn) { btn.disabled = true; btn.classList.add('loading'); }
 
-      fetch('/api/live')
+      fetch('/api/live?t=' + Date.now(), { cache: 'no-store' })
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
@@ -2215,7 +2222,7 @@
       const days = document.getElementById('days-select').value || 30;
       const loading = document.getElementById('recent-loading');
       loading.textContent = 'Loading…';
-      fetch('/api/recent?days=' + days)
+      fetch('/api/recent?days=' + days + '&t=' + Date.now(), { cache: 'no-store' })
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();

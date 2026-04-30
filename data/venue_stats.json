@@ -1,0 +1,92 @@
+{
+  "Maharaja Yadavindra Singh International Cricket Stadium, Mullanpur": {
+    "avg_first_innings": 163.0,
+    "chasing_efficiency": 0.5,
+    "matches_sample": 10
+  },
+  "Eden Gardens, Kolkata": {
+    "avg_first_innings": 195.7,
+    "chasing_efficiency": 0.48,
+    "matches_sample": 26
+  },
+  "Wankhede Stadium, Mumbai": {
+    "avg_first_innings": 180.2,
+    "chasing_efficiency": 0.587,
+    "matches_sample": 46
+  },
+  "Maharashtra Cricket Association Stadium, Pune": {
+    "avg_first_innings": 171.5,
+    "chasing_efficiency": 0.231,
+    "matches_sample": 13
+  },
+  "Narendra Modi Stadium, Ahmedabad": {
+    "avg_first_innings": 192.1,
+    "chasing_efficiency": 0.484,
+    "matches_sample": 31
+  },
+  "Bharat Ratna Shri Atal Bihari Vajpayee Ekana Cricket Stadium, Lucknow": {
+    "avg_first_innings": 174.9,
+    "chasing_efficiency": 0.583,
+    "matches_sample": 24
+  },
+  "Dr DY Patil Sports Academy, Mumbai": {
+    "avg_first_innings": 170.7,
+    "chasing_efficiency": 0.5,
+    "matches_sample": 20
+  },
+  "Sawai Mansingh Stadium, Jaipur": {
+    "avg_first_innings": 189.5,
+    "chasing_efficiency": 0.556,
+    "matches_sample": 18
+  },
+  "MA Chidambaram Stadium, Chepauk, Chennai": {
+    "avg_first_innings": 171.8,
+    "chasing_efficiency": 0.571,
+    "matches_sample": 28
+  },
+  "Brabourne Stadium, Mumbai": {
+    "avg_first_innings": 177.2,
+    "chasing_efficiency": 0.5,
+    "matches_sample": 16
+  },
+  "Rajiv Gandhi International Stadium, Uppal, Hyderabad": {
+    "avg_first_innings": 194.2,
+    "chasing_efficiency": 0.5,
+    "matches_sample": 22
+  },
+  "Dr. Y.S. Rajasekhara Reddy ACA-VDCA Cricket Stadium, Visakhapatnam": {
+    "avg_first_innings": 208.8,
+    "chasing_efficiency": 0.5,
+    "matches_sample": 4
+  },
+  "Arun Jaitley Stadium, Delhi": {
+    "avg_first_innings": 197.8,
+    "chasing_efficiency": 0.455,
+    "matches_sample": 22
+  },
+  "Maharaja Yadavindra Singh International Cricket Stadium, New Chandigarh": {
+    "avg_first_innings": 217.0,
+    "chasing_efficiency": 0.6,
+    "matches_sample": 5
+  },
+  "M Chinnaswamy Stadium, Bengaluru": {
+    "avg_first_innings": 190.4,
+    "chasing_efficiency": 0.542,
+    "matches_sample": 24
+  },
+  "Barsapara Cricket Stadium, Guwahati": {
+    "avg_first_innings": 168.9,
+    "chasing_efficiency": 0.5,
+    "matches_sample": 8
+  },
+  "Punjab Cricket Association IS Bindra Stadium, Mohali, Chandigarh": {
+    "avg_first_innings": 197.8,
+    "chasing_efficiency": 0.4,
+    "matches_sample": 5
+  },
+  "Himachal Pradesh Cricket Association Stadium, Dharamsala": {
+    "avg_first_innings": 208.8,
+    "chasing_efficiency": 0.2,
+    "matches_sample": 5
+  }
+}

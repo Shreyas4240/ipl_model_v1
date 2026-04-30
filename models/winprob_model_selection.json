@@ -1,0 +1,56 @@
+{
+  "split": "train=2023-2025,test=2026",
+  "best": "base",
+  "metrics": {
+    "base": {
+      "brier": 0.27643054949999174,
+      "log_loss": 1.1482843982304687,
+      "roc_auc": 0.7523473536705799,
+      "accuracy": 0.6664228237015362
+    },
+    "sigmoid": {
+      "brier": 0.3236088262114366,
+      "log_loss": 2.0798256877396595,
+      "roc_auc": 0.7523473536705799,
+      "accuracy": 0.6598390636430139
+    },
+    "isotonic": {
+      "brier": 0.3261903572098533,
+      "log_loss": 9.253078291052203,
+      "roc_auc": 0.6958128618677857,
+      "accuracy": 0.6515484028285784
+    }
+  },
+  "weighted_training": true,
+  "features": [
+    "legal_ball",
+    "runs_scored",
+    "wickets_fallen",
+    "wickets_remaining",
+    "balls_remaining",
+    "runs_needed",
+    "over",
+    "crr",
+    "rrr",
+    "run_rate_diff",
+    "pct_balls_used",
+    "pct_runs_scored",
+    "pct_wickets_fallen",
+    "momentum_runs_12b",
+    "momentum_wickets_12b",
+    "momentum_run_rate_12b",
+    "balls_since_last_wicket",
+    "venue_avg_first_innings",
+    "venue_chasing_efficiency",
+    "target_vs_venue_avg",
+    "projected_final_score",
+    "projected_margin",
+    "target_runs",
+    "target_overs",
+    "momentum_score",
+    "recent_runs_rate",
+    "recent_wicket_rate",
+    "batting_pressure",
+    "phase"
+  ]
+}

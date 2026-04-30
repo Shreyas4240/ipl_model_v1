@@ -1,431 +1,228 @@
-import fs from 'fs';
-import path from 'path';
+const fs = require('fs');
+const path = require('path');
 
-// Fitted per powerplay (fit_ipl_powerplay_model.py): overs 1–6, 7–16, 17–20
-// Fitted with fit_ipl_powerplay_model.py (2022 matches excluded)
-let PHASE_Z0_A = [
-  [1.5717, 0.019395],
-  [1.190465, 0.000344],
-  [1.853324, 0.031399],
-];
-let RESOURCE_PHASE_PARAMS = [
-  [35.183517, 0.050941, 0.010875], // C, b, a_w (overs 1-6)
-  [29.6944, 0.054326, 0.003438], // overs 7-16
-  [45.666991, 0.040952, 0.00194], // overs 17-20
-];
-let RESOURCE_WICKET_GAMMA = 2.499963;
-let PHASE_BLEND_OVERS = 0.5;
-let RR_SHRINK_ALPHA_PHASE = [0.129668, 0.374227, 0.64401];
-let RR_PHASE_MU = [7.916135, 8.506491, 8.66626];
-const MAX_OVERS = 20;
-const MAX_WICKETS = 10;
-const MIN_DATA_YEAR = 2023;
+function readSnapshots() {
+  const csvPath = path.join(__dirname, '../ipl_innings_snapshots.csv');
+  if (!fs.existsSync(csvPath)) return [];
 
-function loadRuntimeModelParams(rootDir) {
-  const p = path.join(rootDir, 'model_params.json');
-  if (!fs.existsSync(p)) return;
+  const lines = fs.readFileSync(csvPath, 'utf8').split('\n').slice(1);
+  return lines
+    .map((line) => {
+      const parts = line.split(',');
+      if (parts.length < 9) return null;
+      const [team, ballsBowled, oversCompleted, oversRemaining, wickets, runRate, currentScore, finalTotal, matchFile] = parts;
+      return {
+        innings_team: (team || '').trim(),
+        balls_bowled: Number(ballsBowled) || 0,
+        overs_completed: Number(oversCompleted) || 0,
+        overs_remaining: Number(oversRemaining) || 0,
+        wickets_lost: Number(wickets) || 0,
+        run_rate: Number(runRate) || 0,
+        current_score: Number(currentScore) || 0,
+        actual: Number(finalTotal) || 0,
+        match_file: (matchFile || '').trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
+function readMatchFile(filename) {
+  const jsonPath = path.join(__dirname, '../ipl_male_json', filename);
+  if (!fs.existsSync(jsonPath)) return null;
   try {
-    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
-    const rr = data.rr_shrinkage || {};
-    const rm = data.resource_model || {};
-    if (Array.isArray(rr.alpha_by_phase) && rr.alpha_by_phase.length === 3) {
-      RR_SHRINK_ALPHA_PHASE = rr.alpha_by_phase.map(Number);
-    }
-    if (Array.isArray(rr.mu_by_phase) && rr.mu_by_phase.length === 3) {
-      RR_PHASE_MU = rr.mu_by_phase.map(Number);
-    }
-    if (Array.isArray(rm.phases) && rm.phases.length === 3) {
-      RESOURCE_PHASE_PARAMS = rm.phases.map(ph => [Number(ph.C), Number(ph.b), Number(ph.a_w)]);
-    }
-    if (Array.isArray(data.phases) && data.phases.length === 3) {
-      PHASE_Z0_A = data.phases.map(ph => [Number(ph.Z0), Number(ph.a)]);
-    }
-    if (rm.wicket_gamma != null) RESOURCE_WICKET_GAMMA = Number(rm.wicket_gamma);
-    if (rm.phase_blend_overs != null) PHASE_BLEND_OVERS = Number(rm.phase_blend_overs);
+    return JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
   } catch {
-    // Keep defaults if invalid file.
+    return null;
+  }
+}
+
+function readModelParams() {
+  const modelPath = path.join(__dirname, '../data/model_params.json');
+  if (!fs.existsSync(modelPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(modelPath, 'utf8'));
+  } catch {
+    return null;
   }
 }
 
 function powerplayPhase(oversCompleted) {
-  const oc = Number(oversCompleted);
-  if (oc <= 6) return 0;
-  if (oc <= 16) return 1;
+  if (oversCompleted <= 6) return 0;
+  if (oversCompleted <= 16) return 1;
   return 2;
 }
 
-function effectiveRunRate(runRate, oversCompleted) {
-  const k = powerplayPhase(oversCompleted);
-  const alpha = RR_SHRINK_ALPHA_PHASE[k];
-  const mu = RR_PHASE_MU[k];
-  return alpha * Number(runRate) + (1 - alpha) * mu;
-}
-
-function resourceForPhase(phaseIdx, oversRemaining, wicketsRemaining) {
-  const [Ck, bk, ak] = RESOURCE_PHASE_PARAMS[phaseIdx];
-  const oversR = Math.max(0, Number(oversRemaining));
-  const wicketsLost = Math.max(0, MAX_WICKETS - Number(wicketsRemaining));
-  return Ck * (1 - Math.exp(-bk * oversR)) * Math.exp(-ak * Math.pow(wicketsLost, RESOURCE_WICKET_GAMMA));
-}
-
-function resourceFactor(oversRemaining, wicketsRemaining, oversCompleted) {
-  const oc = Number(oversCompleted);
-  if (oc <= 6 - PHASE_BLEND_OVERS) return resourceForPhase(0, oversRemaining, wicketsRemaining);
-  if (oc >= 6 + PHASE_BLEND_OVERS && oc <= 16 - PHASE_BLEND_OVERS) {
-    return resourceForPhase(1, oversRemaining, wicketsRemaining);
+function getRRShrink(modelParams) {
+  const s = modelParams && modelParams.rr_shrinkage;
+  if (s && Array.isArray(s.alpha_by_phase) && s.alpha_by_phase.length === 3 && Array.isArray(s.mu_by_phase) && s.mu_by_phase.length === 3) {
+    return {
+      alphaByPhase: s.alpha_by_phase.map(Number),
+      muByPhase: s.mu_by_phase.map(Number),
+    };
   }
-  if (oc >= 16 + PHASE_BLEND_OVERS) return resourceForPhase(2, oversRemaining, wicketsRemaining);
-
-  if (oc > 6 - PHASE_BLEND_OVERS && oc < 6 + PHASE_BLEND_OVERS) {
-    const t = (oc - (6 - PHASE_BLEND_OVERS)) / (2 * PHASE_BLEND_OVERS);
-    const r0 = resourceForPhase(0, oversRemaining, wicketsRemaining);
-    const r1 = resourceForPhase(1, oversRemaining, wicketsRemaining);
-    return (1 - t) * r0 + t * r1;
-  }
-  const t = (oc - (16 - PHASE_BLEND_OVERS)) / (2 * PHASE_BLEND_OVERS);
-  const r1 = resourceForPhase(1, oversRemaining, wicketsRemaining);
-  const r2 = resourceForPhase(2, oversRemaining, wicketsRemaining);
-  return (1 - t) * r1 + t * r2;
-}
-
-function modelParamsPayload() {
-  const labels = ['Overs 1–6', 'Overs 7–16', 'Overs 17–20'];
-  const ids = ['pp1_6', 'pp7_16', 'pp17_20'];
   return {
-    max_overs: MAX_OVERS,
-    max_wickets: MAX_WICKETS,
-    min_match_date: '2023-01-01',
-    rr_shrinkage: {
-      alpha_by_phase: [...RR_SHRINK_ALPHA_PHASE],
-      mu_by_phase: [...RR_PHASE_MU],
-      phase_labels: ['Overs 1–6', 'Overs 7–16', 'Overs 17–20'],
-      formula:
-        'RR_eff = α_k×RR + (1−α_k)×μ_k; k = same segment as Z₀,a (2023+ IPL)',
-    },
-    resource_model: {
-      phase_labels: ['Overs 1–6', 'Overs 7–16', 'Overs 17–20'],
-      phases: [
-        { id: 'pp1_6', label: 'Overs 1–6', C: RESOURCE_PHASE_PARAMS[0][0], b: RESOURCE_PHASE_PARAMS[0][1], a_w: RESOURCE_PHASE_PARAMS[0][2] },
-        { id: 'pp7_16', label: 'Overs 7–16', C: RESOURCE_PHASE_PARAMS[1][0], b: RESOURCE_PHASE_PARAMS[1][1], a_w: RESOURCE_PHASE_PARAMS[1][2] },
-        { id: 'pp17_20', label: 'Overs 17–20', C: RESOURCE_PHASE_PARAMS[2][0], b: RESOURCE_PHASE_PARAMS[2][1], a_w: RESOURCE_PHASE_PARAMS[2][2] },
-      ],
-      wicket_gamma: RESOURCE_WICKET_GAMMA,
-      phase_blend_overs: PHASE_BLEND_OVERS,
-      formula:
-        'R = C_k*(1-exp(-b_k*overs_remaining))*exp(-a_k*wickets_lost^gamma), blended near 6 and 16 overs',
-    },
-    phases: PHASE_Z0_A.map(([Z0, a], i) => ({
-      id: ids[i],
-      label: labels[i],
-      Z0,
-      a,
-    })),
+    alphaByPhase: [0.129668, 0.374227, 0.64401],
+    muByPhase: [7.916135, 8.506491, 8.66626],
   };
 }
 
-function buildCsvFromJson(jsonDir, csvPath) {
-  // Generate ipl_innings_snapshots.csv from ball-by-ball JSON files if missing.
-  if (!fs.existsSync(jsonDir)) return;
-  const files = fs.readdirSync(jsonDir).filter(f => f.endsWith('.json'));
-  const rows = ['team,balls_bowled,overs_completed,overs_remaining,wickets,run_rate,current_score,final_total,match_file'];
-
-  for (const fname of files) {
-    try {
-      const data = JSON.parse(fs.readFileSync(path.join(jsonDir, fname), 'utf8'));
-      const info = data.info || {};
-      const dates = info.dates || [];
-      if (!dates.length) continue;
-      const year = parseInt(dates[0].slice(0, 4), 10);
-      if (year < MIN_DATA_YEAR) continue;
-      if (!info.outcome) continue;
-
-      const innings = data.innings || [];
-      for (const inn of innings) {
-        const team = inn.team || '';
-        let score = 0, wickets = 0, balls = 0;
-        let finalTotal = 0;
-
-        // First pass: get final total
-        for (const over of (inn.overs || [])) {
-          for (const ball of (over.deliveries || [])) {
-            finalTotal += ball.runs.total;
-          }
-        }
-
-        // Second pass: emit one row per ball
-        for (const over of (inn.overs || [])) {
-          const overNum = over.over;
-          let legalInOver = 0;
-          for (const ball of (over.deliveries || [])) {
-            score += ball.runs.total;
-            if (ball.wickets) wickets += ball.wickets.length;
-            const extras = ball.extras || {};
-            if (!extras.wides && !extras.noballs) legalInOver++;
-            balls++;
-            const oc = overNum + legalInOver / 6;
-            const or = Math.max(0, 20 - oc);
-            const rr = oc > 0 ? score / oc : 0;
-            rows.push([team, balls, oc.toFixed(4), or.toFixed(4), wickets, rr.toFixed(4), score, finalTotal, fname].join(','));
-          }
-        }
-      }
-    } catch (_) {}
+function getResourceModelParams(modelParams) {
+  const m = modelParams && modelParams.resource_model;
+  if (m && Array.isArray(m.phases) && m.phases.length === 3) {
+    return {
+      phases: m.phases,
+      wicketGamma: Number(m.wicket_gamma || 2.5),
+      phaseBlendOvers: Number(m.phase_blend_overs || 0.5),
+    };
   }
-
-  fs.writeFileSync(csvPath, rows.join('\n') + '\n', 'utf8');
-  console.log(`[recent] built CSV: ${rows.length - 1} rows`);
+  return {
+    phases: [
+      { C: 35.183517, b: 0.050941, a_w: 0.010875 },
+      { C: 29.6944, b: 0.054326, a_w: 0.003438 },
+      { C: 45.666991, b: 0.040952, a_w: 0.00194 },
+    ],
+    wicketGamma: 2.499963,
+    phaseBlendOvers: 0.5,
+  };
 }
 
-function parseCsvSnapshots(csvPath) {
-  if (!fs.existsSync(csvPath)) return [];
-  const raw = fs.readFileSync(csvPath, 'utf8');
-  const lines = raw.split(/\r?\n/).filter(l => l.trim().length > 0);
-  if (lines.length <= 1) return [];
-  const out = [];
-  for (let i = 1; i < lines.length; i++) {
-    const parts = lines[i].split(',');
-    if (parts.length < 9) continue;
-    const [
-      team,
-      balls_bowled,
-      overs_completed,
-      overs_remaining,
-      wickets,
-      run_rate,
-      current_score,
-      final_total,
-      match_file,
-    ] = parts;
-    out.push({
-      team: team,
-      balls_bowled: Number(balls_bowled),
-      overs_completed: Number(overs_completed),
-      overs_remaining: Number(overs_remaining),
-      wickets: Number(wickets),
-      run_rate: Number(run_rate),
-      current_score: Number(current_score),
-      final_total: Number(final_total),
-      match_file: match_file,
-    });
+function effectiveRunRate(runRate, oversCompleted, modelParams) {
+  const k = powerplayPhase(oversCompleted);
+  const { alphaByPhase, muByPhase } = getRRShrink(modelParams);
+  const alpha = alphaByPhase[k];
+  const mu = muByPhase[k];
+  return alpha * Number(runRate) + (1 - alpha) * mu;
+}
+
+function resourceForPhase(phaseIdx, oversRem, wicketsRem, model) {
+  const p = model.phases[phaseIdx] || {};
+  const C = Number(p.C || 0);
+  const b = Number(p.b || 0);
+  const aW = Number(p.a_w || 0);
+  const oversR = Math.max(0, Number(oversRem));
+  const wicketsLost = Math.max(0, 10 - Number(wicketsRem));
+  return C * (1 - Math.exp(-b * oversR)) * Math.exp(-aW * Math.pow(wicketsLost, model.wicketGamma));
+}
+
+function resourceFactor(oversRem, wicketsRem, oversCompleted, modelParams) {
+  const model = getResourceModelParams(modelParams);
+  const oc = Number(oversCompleted);
+  const d = model.phaseBlendOvers;
+  if (oc <= 6 - d) return resourceForPhase(0, oversRem, wicketsRem, model);
+  if (oc >= 6 + d && oc <= 16 - d) return resourceForPhase(1, oversRem, wicketsRem, model);
+  if (oc >= 16 + d) return resourceForPhase(2, oversRem, wicketsRem, model);
+  if (oc > 6 - d && oc < 6 + d) {
+    const t = (oc - (6 - d)) / (2 * d);
+    const r0 = resourceForPhase(0, oversRem, wicketsRem, model);
+    const r1 = resourceForPhase(1, oversRem, wicketsRem, model);
+    return (1 - t) * r0 + t * r1;
   }
-  return out;
+  const t = (oc - (16 - d)) / (2 * d);
+  const r1 = resourceForPhase(1, oversRem, wicketsRem, model);
+  const r2 = resourceForPhase(2, oversRem, wicketsRem, model);
+  return (1 - t) * r1 + t * r2;
 }
 
-function getMatchMetadata(jsonDir) {
-  const meta = {};
-  if (!fs.existsSync(jsonDir) || !fs.statSync(jsonDir).isDirectory()) return meta;
-  const files = fs.readdirSync(jsonDir);
-  for (const name of files) {
-    if (!name.endsWith('.json')) continue;
-    const full = path.join(jsonDir, name);
-    try {
-      const data = JSON.parse(fs.readFileSync(full, 'utf8'));
-      const info = data.info || {};
-      const dates = info.dates || [];
-      const dateStr = dates[0] || null;
-      const teams = info.teams || [];
-      const event = info.event || {};
-      const eventName = typeof event === 'object' && event ? event.name || '' : '';
-      const venue = info.venue || info.city || '';
-      meta[name] = {
-        date: dateStr,
-        teams,
-        event: eventName,
-        venue,
-      };
-    } catch {
-      // ignore bad JSON
-    }
-  }
-  return meta;
+function predictScore(currentScore, runRate, oversRem, wicketsLost, oversCompleted, modelParams) {
+  const wicketsRem = 10 - wicketsLost;
+  const rrEff = effectiveRunRate(runRate, oversCompleted, modelParams);
+  const resource = resourceFactor(oversRem, wicketsRem, oversCompleted, modelParams);
+  return currentScore + rrEff * resource;
 }
 
-function getRecentAndUpcoming(meta, pastDays) {
-  const today = new Date();
-  const cutoff = new Date(today.getTime() - Math.min(pastDays, 365 * 50) * 24 * 3600 * 1000);
-  const recent = [];
-  const upcoming = [];
-  for (const [matchFile, m] of Object.entries(meta)) {
-    if (!m.date) continue;
-    const matchYear = parseInt(String(m.date).slice(0, 4), 10);
-    if (!Number.isFinite(matchYear) || matchYear < MIN_DATA_YEAR) continue;
-    const d = new Date(m.date);
-    if (isNaN(d.getTime())) continue;
-    if (d >= today) {
-      upcoming.push({ matchFile, meta: m, date: d });
-    } else if (d >= cutoff) {
-      recent.push({ matchFile, meta: m, date: d });
-    }
-  }
-  recent.sort((a, b) => b.date - a.date);
-  upcoming.sort((a, b) => a.date - b.date);
-  return { recent, upcoming };
-}
-
-function filterCompleteInningsOnly(rows) {
-  if (!rows.length) return rows;
-  const groups = {};
-  for (const r of rows) {
-    const key = `${r.match_file}::${r.team}`;
-    if (!groups[key]) {
-      groups[key] = { maxOvers: r.overs_completed, maxWickets: r.wickets };
-    } else {
-      if (r.overs_completed > groups[key].maxOvers) groups[key].maxOvers = r.overs_completed;
-      if (r.wickets > groups[key].maxWickets) groups[key].maxWickets = r.wickets;
-    }
-  }
-  return rows.filter(r => {
-    const g = groups[`${r.match_file}::${r.team}`];
-    return g && (g.maxOvers >= MAX_OVERS || g.maxWickets >= MAX_WICKETS);
-  });
-}
-
-function sampleSnapshotsAtOvers(matchRows, oversPoints = [10, 15]) {
-  const out = [];
-  for (const target of oversPoints) {
-    let best = null;
-    let bestDiff = Infinity;
-    for (const r of matchRows) {
-      const diff = Math.abs(r.overs_completed - target);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        best = r;
-      }
-    }
-    if (
-      best &&
-      best.overs_remaining > 0 &&
-      best.run_rate > 0 &&
-      MAX_WICKETS - best.wickets > 0
-    ) {
-      out.push(best);
-    }
-  }
-  return out;
-}
-
-function predictScore(currentScore, runRate, oversRemaining, wicketsRemaining, oversCompleted) {
-  const rrEff = effectiveRunRate(runRate, oversCompleted);
-  const rf = resourceFactor(oversRemaining, wicketsRemaining, oversCompleted);
-  return currentScore + rrEff * rf;
-}
-
-function buildRecentTestResults(recent, rows) {
-  const results = [];
-  for (const { matchFile, meta } of recent) {
-    const matchRows = rows.filter(r => r.match_file === matchFile);
-    if (!matchRows.length) continue;
-    const teamName = matchRows[0].team;
-    const snaps = sampleSnapshotsAtOvers(matchRows);
-    for (const r of snaps) {
-      const wicketsRemaining = MAX_WICKETS - r.wickets;
-      const oc = r.overs_completed;
-      const ph = powerplayPhase(oc);
-      const pred = predictScore(
-        r.current_score,
-        r.run_rate,
-        r.overs_remaining,
-        wicketsRemaining,
-        oc,
-      );
-      const actual = r.final_total;
-      results.push({
-        match_file: matchFile,
-        date: meta.date,
-        teams: meta.teams,
-        event: meta.event,
-        venue: meta.venue,
-        innings_team: String(teamName),
-        at_over: Number(oc.toFixed(1)),
-        powerplay_phase: ph,
-        current_score: Math.round(r.current_score),
-        run_rate: Number(r.run_rate.toFixed(2)),
-        wickets_lost: r.wickets,
-        overs_remaining: Number(r.overs_remaining.toFixed(1)),
-        predicted: Number(pred.toFixed(1)),
-        actual: Math.round(actual),
-        error: Number(Math.abs(pred - actual).toFixed(1)),
-      });
-    }
-  }
-  return results;
-}
-
-export default function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
-    const daysRaw = Array.isArray(req.query.days)
-      ? req.query.days[0]
-      : req.query.days;
-    let pastDays = parseInt(daysRaw || '30', 10);
-    if (!Number.isFinite(pastDays)) pastDays = 30;
-    pastDays = Math.max(1, Math.min(9999, pastDays));
+    const days = Number(req.query.days) || 30;
+    const snapshots = readSnapshots();
+    const modelParams = readModelParams();
+    const now = Date.now();
+    const cutoffTs = Number.isFinite(days) && days > 0 ? now - days * 24 * 60 * 60 * 1000 : 0;
 
-    const root = process.cwd();
-    loadRuntimeModelParams(root);
-    const csvPath = path.join(root, 'ipl_innings_snapshots.csv');
-    const jsonDir = path.join(root, 'ipl_male_json');
-
-    const meta = getMatchMetadata(jsonDir);
-    const { recent } = getRecentAndUpcoming(meta, pastDays);
-    // Build CSV on-the-fly if missing (e.g. fresh deploy)
-    if (!fs.existsSync(csvPath)) {
-      console.log('[recent] CSV missing, building from JSON...');
-      buildCsvFromJson(jsonDir, csvPath);
-    }
-    const allRows = parseCsvSnapshots(csvPath);
-    if (!allRows.length) {
-      return res.status(200).json({
-        results: [],
-        summary: {
-          count: 0,
-          mae: 0,
-          message: 'IPL CSV not found or empty',
-          days_requested: pastDays,
-        },
-        model_params: modelParamsPayload(),
+    const matchMeta = new Map();
+    for (const s of snapshots) {
+      if (matchMeta.has(s.match_file)) continue;
+      const m = readMatchFile(s.match_file);
+      const date = m?.info?.dates?.[0] || null;
+      const ts = date ? new Date(date).getTime() : 0;
+      matchMeta.set(s.match_file, {
+        date: date || '',
+        ts: Number.isFinite(ts) ? ts : 0,
+        teams: m?.info?.teams || [],
       });
     }
 
-    const filtered = filterCompleteInningsOnly(allRows);
-    const results = buildRecentTestResults(recent, filtered);
-    if (!results.length) {
-      return res.status(200).json({
-        results: [],
-        summary: {
-          count: 0,
-          mae: 0,
-          message: `No IPL matches in the last ${pastDays} days in dataset.`,
-          days_requested: pastDays,
-        },
-        model_params: modelParamsPayload(),
+    const results = snapshots
+      .filter((s) => {
+        const meta = matchMeta.get(s.match_file);
+        if (!meta || !meta.ts || !cutoffTs) return true;
+        return meta.ts >= cutoffTs;
+      })
+      .filter((s) => {
+        const atOver = Math.round(s.overs_completed * 10) / 10;
+        return atOver === 10 || atOver === 15;
+      })
+      .map((s) => {
+        const meta = matchMeta.get(s.match_file) || { date: '', teams: [] };
+        const firstInningsTeam = (meta.teams && meta.teams.length) ? meta.teams[0] : null;
+        if (firstInningsTeam && s.innings_team !== firstInningsTeam) return null;
+        const predicted = predictScore(
+          s.current_score,
+          s.run_rate,
+          s.overs_remaining,
+          s.wickets_lost,
+          s.overs_completed,
+          modelParams,
+        );
+        const error = Math.abs(predicted - s.actual);
+        return {
+          date: meta.date,
+          teams: meta.teams,
+          innings_team: s.innings_team,
+          at_over: Math.round(s.overs_completed * 10) / 10,
+          overs_completed: s.overs_completed,
+          overs_remaining: s.overs_remaining,
+          wickets_lost: s.wickets_lost,
+          current_score: s.current_score,
+          run_rate: Math.round(s.run_rate * 100) / 100,
+          predicted: Math.round(predicted * 10) / 10,
+          actual: s.actual,
+          error: Math.round(error * 10) / 10,
+          match_file: s.match_file,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const ta = a.date ? new Date(a.date).getTime() : 0;
+        const tb = b.date ? new Date(b.date).getTime() : 0;
+        return tb - ta;
       });
-    }
 
-    const errors = results.map(r => r.error);
-    const mae =
-      errors.reduce((sum, e) => sum + e, 0) / (errors.length || 1);
-    const rmse = Math.sqrt(
-      errors.reduce((sum, e) => sum + e * e, 0) / (errors.length || 1),
-    );
+    const errors = results.map((r) => r.error);
+    const count = results.length;
+    const mae = count ? errors.reduce((sum, e) => sum + e, 0) / count : 0;
+    const rmse = count ? Math.sqrt(errors.reduce((sum, e) => sum + e * e, 0) / count) : 0;
 
-    res.status(200).json({
-      results,
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    return res.status(200).json({
       summary: {
-        count: results.length,
-        matches_count: recent.length,
+        count,
         mae: Number(mae.toFixed(2)),
         rmse: Number(rmse.toFixed(2)),
-        days_requested: pastDays,
+        message: count ? undefined : 'No matches found for selected period.',
       },
-      model_params: modelParamsPayload(),
+      results: results.slice(0, 2000),
+      model_params: modelParams,
     });
   } catch (err) {
-    res.status(500).json({
-      error: String(err),
+    console.error('[recent] error:', err.message);
+    return res.status(500).json({
+      error: err.message,
+      summary: { count: 0, mae: null, rmse: null, message: 'Could not load recent data.' },
       results: [],
-      summary: { count: 0, mae: 0 },
-      model_params: modelParamsPayload(),
+      model_params: null,
     });
   }
-}
-
+};

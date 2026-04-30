@@ -1,9 +1,16 @@
-const { getLiveMatchesData } = require('./live');
+const live = require('./live');
+const getLiveMatchesData =
+  typeof live.getLiveMatchesData === 'function'
+    ? live.getLiveMatchesData
+    : (typeof live === 'function' ? live : null);
 const { fetchAndMergeScorecard } = require('./scorecard');
 
 module.exports = async function handler(req, res) {
   try {
     console.log('[sync] Calling live handler internally...');
+    if (typeof getLiveMatchesData !== 'function') {
+      throw new Error('Live data function unavailable');
+    }
     const liveData = await getLiveMatchesData();
     
     if (!liveData || !liveData.matches) {

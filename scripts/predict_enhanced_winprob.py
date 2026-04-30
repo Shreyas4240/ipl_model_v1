@@ -15,6 +15,11 @@ import numpy as np
 import pandas as pd
 import argparse
 from typing import Dict, Optional, List
+from pathlib import Path
+try:
+    from score_projection import load_model_params, project_final_score
+except ModuleNotFoundError:
+    from scripts.score_projection import load_model_params, project_final_score
 
 # Feature columns (must match training)
 FEATURE_COLS = [
@@ -25,6 +30,7 @@ FEATURE_COLS = [
     "momentum_runs_12b", "momentum_wickets_12b", "momentum_run_rate_12b",
     "balls_since_last_wicket",
     "venue_avg_first_innings", "venue_chasing_efficiency", "target_vs_venue_avg",
+    "projected_final_score", "projected_margin",
     "target_runs", "target_overs",
     "momentum_score", "recent_runs_rate", "recent_wicket_rate", "batting_pressure"
 ]
@@ -37,6 +43,17 @@ DEFAULT_VENUE_STATS = {
     "avg_first_innings": 193,
     "chasing_efficiency": 0.52
 }
+MODEL_PARAMS = load_model_params(Path(__file__).resolve().parents[1])
+
+
+def overs_to_legal_balls(overs: float) -> int:
+    whole = int(overs)
+    frac = int(round((overs - whole) * 10))
+    if frac < 0:
+        frac = 0
+    if frac > 5:
+        frac = 5
+    return whole * 6 + frac
 
 
 def get_phase(over: int) -> str:
@@ -134,7 +151,7 @@ def prepare_enhanced_features(
     venue = venue_stats or DEFAULT_VENUE_STATS
     
     # Calculate derived features
-    legal_balls = int(overs * 6) + int((overs % 1) * 10)  # Approximate legal balls
+    legal_balls = overs_to_legal_balls(overs)
     balls_remaining = 120 - legal_balls
     runs_needed = target - runs
     wickets_remaining = 10 - wickets
@@ -159,6 +176,15 @@ def prepare_enhanced_features(
     venue_avg_first_innings = venue["avg_first_innings"]
     venue_chasing_efficiency = venue["chasing_efficiency"]
     target_vs_venue_avg = target - venue_avg_first_innings
+    projected_final_score = project_final_score(
+        current_score=runs,
+        run_rate=crr,
+        overs_remaining=max(0.0, balls_remaining / 6.0),
+        wickets_lost=wickets,
+        overs_completed=legal_balls / 6.0,
+        model_params=MODEL_PARAMS,
+    )
+    projected_margin = projected_final_score - target
     
     # Calculate new momentum features
     current_state = {
@@ -196,6 +222,8 @@ def prepare_enhanced_features(
         "venue_avg_first_innings": venue_avg_first_innings,
         "venue_chasing_efficiency": venue_chasing_efficiency,
         "target_vs_venue_avg": round(target_vs_venue_avg, 2),
+        "projected_final_score": round(projected_final_score, 2),
+        "projected_margin": round(projected_margin, 2),
         "target_runs": target,
         "target_overs": target_overs,
         "momentum_score": momentum_features["momentum_score"],

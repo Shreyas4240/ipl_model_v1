@@ -26,6 +26,7 @@ FEATURE_COLS = [
     "momentum_runs_12b", "momentum_wickets_12b", "momentum_run_rate_12b",
     "balls_since_last_wicket",
     "venue_avg_first_innings", "venue_chasing_efficiency", "target_vs_venue_avg",
+    "projected_final_score", "projected_margin",
     "target_runs", "target_overs"
 ]
 

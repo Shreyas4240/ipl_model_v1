@@ -1,25 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/recent.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/upcoming.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
     "api/live.js": {
-      "memory": 1024,
-      "maxDuration": 60
-    },
-    "api/winprob.js": {
-      "memory": 1024,
-      "maxDuration": 30
-    },
-    "api/winprob-enhanced.js": {
-      "memory": 1024,
-      "maxDuration": 30
+      "memory": 512,
+      "maxDuration": 10
     },
     "api/scorecard.js": {
       "memory": 1024,
@@ -28,6 +12,10 @@
     "api/sync.js": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "api/recent.js": {
+      "memory": 1024,
+      "maxDuration": 30
     }
   }
 }

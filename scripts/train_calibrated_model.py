@@ -31,6 +31,7 @@ FEATURE_COLS = [
     "momentum_runs_12b", "momentum_wickets_12b", "momentum_run_rate_12b",
     "balls_since_last_wicket",
     "venue_avg_first_innings", "venue_chasing_efficiency", "target_vs_venue_avg",
+    "projected_final_score", "projected_margin",
     "target_runs", "target_overs",
     "momentum_score", "recent_runs_rate", "recent_wicket_rate", "batting_pressure"
 ]
@@ -73,8 +74,22 @@ def train_base_model(X_train, y_train) -> xgb.XGBClassifier:
         "n_jobs": -1
     }
     
+    # Emphasize high-leverage states so ball events move probability more.
+    balls_remaining = X_train["balls_remaining"].clip(lower=1, upper=120)
+    runs_needed = X_train["runs_needed"].clip(lower=0, upper=300)
+    wickets_fallen = X_train["wickets_fallen"].clip(lower=0, upper=10)
+    rrr = X_train["rrr"].clip(lower=0, upper=30)
+    leverage = (
+        1.0
+        + 1.2 * (1.0 - balls_remaining / 120.0)
+        + 1.0 * (runs_needed / balls_remaining)
+        + 0.6 * (wickets_fallen / 10.0)
+        + 0.8 * (rrr / 12.0)
+    )
+    sample_weight = leverage.clip(lower=1.0, upper=6.0)
+
     model = xgb.XGBClassifier(**params)
-    model.fit(X_train, y_train)
+    model.fit(X_train, y_train, sample_weight=sample_weight)
     
     return model
 
