@@ -286,7 +286,7 @@ async function getLiveMatchesData() {
     let status = 'upcoming';
     let result = 'Upcoming';
     const isCompleted = /won by|completed|final| \w+ won/i.test(text);
-    const isLive = !isCompleted && /opt to bat|opt to bowl|toss|live|batting|bowling|running/i.test(text);
+    const isLive = !isCompleted && /opt to bat|opt to bowl|toss|live|batting|bowling|running|need|runs|crr|rrr|\d+\/\d+/i.test(text);
 
     if (isCompleted) {
       status = 'completed';
@@ -337,7 +337,15 @@ async function getLiveMatchesData() {
   });
 
   const hydrated = await Promise.all(matches.map(enrichMatchWithScore));
-  return { matches: hydrated };
+
+  // Cricbuzz keeps completed matches on the live-scores page for several days.
+  // Keep only the single most-recent completed match (highest matchId = most recent).
+  const completedMatches = hydrated.filter(m => m.status === 'completed')
+    .sort((a, b) => Number(b.matchId) - Number(a.matchId));
+  const otherMatches = hydrated.filter(m => m.status !== 'completed');
+  const filtered = [...otherMatches, ...(completedMatches.length ? [completedMatches[0]] : [])];
+
+  return { matches: filtered };
 }
 
 async function handler(req, res) {

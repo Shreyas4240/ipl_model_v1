@@ -13,8 +13,20 @@ def extract_innings_snapshots_from_ipl():
     # Get all JSON files
     json_files = [f for f in os.listdir(ipl_dir) if f.endswith('.json')]
     print(f"Found {len(json_files)} IPL JSON files")
+
+    # Blacklisted abandoned/rain matches (unfinished first innings)
+    BLACKLIST = {
+        "336022.json", "1426298.json", "501215.json", "1473471.json", "501255.json",
+        "733971.json", "1136566.json", "336012.json", "829807.json", "1473495.json",
+        "1136592.json", "501265.json", "1527685.json", "1178424.json", "336010.json",
+        "1359519.json", "980989.json", "1527686.json", "392183.json", "980999.json",
+        "829803.json", "598068.json", "548307.json", "829771.json", "392214.json"
+    }
     
     for json_file in json_files:
+        if json_file in BLACKLIST:
+            print(f"Skipping blacklisted match: {json_file}")
+            continue
         try:
             with open(os.path.join(ipl_dir, json_file), 'r') as f:
                 match_data = json.load(f)

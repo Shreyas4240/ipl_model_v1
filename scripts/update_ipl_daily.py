@@ -25,8 +25,17 @@ from process_ipl_data import extract_innings_snapshots_from_ipl
 
 CRICSHEET_IPL_ZIP = "https://cricsheet.org/downloads/ipl_json.zip"
 JSON_DIR = "ipl_male_json"
-MODEL_PARAMS_PATH = "model_params.json"
+MODEL_PARAMS_PATH = "data/model_params.json"
 CSV_PATH = "ipl_innings_snapshots.csv"
+
+# Matches to exclude due to rain/abandonment/external conditions (unfinished first innings)
+BLACKLIST_MATCH_FILES = {
+    "336022.json", "1426298.json", "501215.json", "1473471.json", "501255.json",
+    "733971.json", "1136566.json", "336012.json", "829807.json", "1473495.json",
+    "1136592.json", "501265.json", "1527685.json", "1178424.json", "336010.json",
+    "1359519.json", "980989.json", "1527686.json", "392183.json", "980999.json",
+    "829803.json", "598068.json", "548307.json", "829771.json", "392214.json"
+}
 MIN_YEAR = 2023
 MAX_OVERS = 20
 MAX_WICKETS = 10
@@ -102,6 +111,8 @@ def _load_training_df(csv_path: str, json_dir: str) -> pd.DataFrame:
         if y is None or y >= MIN_YEAR:
             keep.append(mf)
     df = df[df["match_file"].astype(str).isin(set(keep))].copy()
+    # Apply blacklist
+    df = df[~df["match_file"].astype(str).isin(BLACKLIST_MATCH_FILES)].copy()
     return df
 
 

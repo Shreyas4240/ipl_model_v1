@@ -1938,6 +1938,212 @@
       });
     }
 
+    /* ── INNINGS 1 RESOURCE MODEL (client-side port) ─────────────── */
+    var _modelParams = null;
+    var _modelParamsPromise = null;
+
+    function loadModelParams() {
+      if (_modelParams) return Promise.resolve(_modelParams);
+      if (_modelParamsPromise) return _modelParamsPromise;
+      _modelParamsPromise = fetch('/data/model_params.json')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(m) { _modelParams = m; return m; })
+        .catch(function() { return null; });
+      return _modelParamsPromise;
+    }
+
+    function _ppPhase(oc) { return oc <= 6 ? 0 : oc <= 16 ? 1 : 2; }
+
+    function _effectiveRR(rr, oc, mp) {
+      var s = mp && mp.rr_shrinkage;
+      var alpha = s && s.alpha_by_phase ? Number(s.alpha_by_phase[_ppPhase(oc)]) : [0.130, 0.374, 0.644][_ppPhase(oc)];
+      var mu    = s && s.mu_by_phase    ? Number(s.mu_by_phase[_ppPhase(oc)])    : [7.916, 8.506, 8.666][_ppPhase(oc)];
+      return alpha * rr + (1 - alpha) * mu;
+    }
+
+    function _resourceForPhase(pi, oversRem, wicketsRem, mp) {
+      var rm = mp && mp.resource_model;
+      var p  = (rm && rm.phases && rm.phases[pi]) || [{C:35.18,b:0.051,a_w:0.011},{C:29.69,b:0.054,a_w:0.003},{C:45.67,b:0.041,a_w:0.002}][pi];
+      var C  = Number(p.C || 0), b = Number(p.b || 0), aW = Number(p.a_w || 0);
+      var wg = rm ? Number(rm.wicket_gamma || 2.5) : 2.5;
+      var wl = Math.max(0, 10 - Number(wicketsRem));
+      return C * (1 - Math.exp(-b * Math.max(0, oversRem))) * Math.exp(-aW * Math.pow(wl, wg));
+    }
+
+    function _resourceFactor(oversRem, wicketsRem, oc, mp) {
+      var rm = mp && mp.resource_model;
+      var d  = rm ? Number(rm.phase_blend_overs || 0.5) : 0.5;
+      if (oc <= 6 - d) return _resourceForPhase(0, oversRem, wicketsRem, mp);
+      if (oc >= 6 + d && oc <= 16 - d) return _resourceForPhase(1, oversRem, wicketsRem, mp);
+      if (oc >= 16 + d) return _resourceForPhase(2, oversRem, wicketsRem, mp);
+      if (oc > 6 - d && oc < 6 + d) {
+        var t = (oc - (6 - d)) / (2 * d);
+        return (1 - t) * _resourceForPhase(0, oversRem, wicketsRem, mp) + t * _resourceForPhase(1, oversRem, wicketsRem, mp);
+      }
+      var t2 = (oc - (16 - d)) / (2 * d);
+      return (1 - t2) * _resourceForPhase(1, oversRem, wicketsRem, mp) + t2 * _resourceForPhase(2, oversRem, wicketsRem, mp);
+    }
+
+    function _predictScore(currentRuns, wicketsLost, oversCompleted, mp) {
+      var oversRem   = Math.max(0, 20 - oversCompleted);
+      var wicketsRem = 10 - wicketsLost;
+      var rr         = oversCompleted > 0 ? currentRuns / oversCompleted : 0;
+      var rrEff      = _effectiveRR(rr, oversCompleted, mp);
+      var resource   = _resourceFactor(oversRem, wicketsRem, oversCompleted, mp);
+      return Math.round(currentRuns + rrEff * resource);
+    }
+
+    var inn1PredCharts = {};
+
+    function renderInn1PredChart(canvasId, inn1Balls, actualFinal, abbr1, dark) {
+      var canvas = document.getElementById(canvasId);
+      if (!canvas || typeof Chart === 'undefined') return;
+      var c = chartColors();
+      var accentColor = dark ? '#60a5fa' : '#2563eb';
+      var refColor    = dark ? 'rgba(250,250,250,0.35)' : 'rgba(10,10,10,0.25)';
+
+      loadModelParams().then(function(mp) {
+        if (!mp) return;
+
+        // Build predicted score line + wicket markers
+        var data = [];
+        var wicketPoints = [];
+        var prevWickets = 0;
+        inn1Balls.forEach(function(b) {
+          var parts = String(b.over || '0').split('.');
+          var ovInt  = parseInt(parts[0]) || 0;
+          var ballN  = parseInt(parts[1]) || 0;
+          var oversCompleted = ovInt + ballN / 6;
+          if (oversCompleted < 1 || oversCompleted > 19.9) { prevWickets = b.wickets; return; }
+          var pred = _predictScore(b.runs, b.wickets, oversCompleted, mp);
+          data.push({ x: parseFloat(b.over), y: pred });
+          // Wicket fell on this ball
+          if (b.wickets > prevWickets) {
+            wicketPoints.push({ x: parseFloat(b.over), y: pred, wktNum: b.wickets });
+          }
+          prevWickets = b.wickets;
+        });
+        if (!data.length) return;
+
+        var wicketColor = dark ? '#f87171' : '#dc2626';
+        var datasets = [
+          {
+            label: abbr1 + ' predicted',
+            data: data,
+            borderColor: accentColor,
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            tension: 0.3,
+            parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+          },
+          {
+            label: 'Wickets',
+            data: wicketPoints,
+            type: 'scatter',
+            borderColor: wicketColor,
+            backgroundColor: wicketColor,
+            pointStyle: 'triangle',
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+          },
+        ];
+
+        // Dashed actual final score reference line
+        if (actualFinal != null) {
+          datasets.push({
+            label: 'Actual: ' + actualFinal,
+            data: [{ x: 0, y: actualFinal }, { x: 20, y: actualFinal }],
+            borderColor: refColor,
+            backgroundColor: 'transparent',
+            borderWidth: 1,
+            borderDash: [4, 3],
+            pointRadius: 0,
+            tension: 0,
+            parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+          });
+        }
+
+
+        // Destroy old chart if canvas was re-used
+        if (inn1PredCharts[canvasId]) {
+          try { inn1PredCharts[canvasId].destroy(); } catch(_) {}
+        }
+
+        // Y-axis range: bracket the data
+        var ys = data.map(function(p) { return p.y; });
+        if (actualFinal != null) ys.push(actualFinal);
+        var yMin = Math.max(0,  Math.floor((Math.min.apply(null, ys) - 20) / 10) * 10);
+        var yMax =              Math.ceil( (Math.max.apply(null, ys) + 20) / 10) * 10;
+
+        inn1PredCharts[canvasId] = new Chart(canvas, {
+          type: 'line',
+          data: { datasets: datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+              x: {
+                type: 'linear', min: 0, max: 20,
+                grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
+                border: { display: false },
+                ticks: {
+                  color: c.text, font: { family: 'IBM Plex Mono', size: 8 },
+                  maxTicksLimit: 6,
+                  callback: function(v) { return [0,5,10,15,20].includes(v) ? v : ''; },
+                },
+              },
+              y: {
+                min: yMin, max: yMax,
+                grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
+                border: { display: false },
+                ticks: {
+                  color: c.text, font: { family: 'IBM Plex Mono', size: 8 },
+                  maxTicksLimit: 4,
+                  callback: function(v) { return v; },
+                },
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                mode: 'index', intersect: false,
+                backgroundColor: dark ? '#1f1f1f' : '#fff',
+                borderColor: dark ? '#2a2a2a' : '#d4d4d4',
+                borderWidth: 1,
+                titleColor: c.text, bodyColor: c.text,
+                titleFont: { family: 'IBM Plex Mono', size: 9 },
+                bodyFont:  { family: 'IBM Plex Mono', size: 9 },
+                filter: function(item) {
+                  // Don't show the wicket scatter or reference line in index-mode hover
+                  return item.datasetIndex === 0;
+                },
+                callbacks: {
+                  title: function(items) {
+                    var x = items[0].parsed.x;
+                    var ovInt = Math.floor(x);
+                    var ball  = Math.round((x - ovInt) * 10);
+                    return ball > 0 ? 'Ov ' + ovInt + '.' + ball : 'Ov ' + ovInt;
+                  },
+                  label: function(item) {
+                    return ' Predicted: ' + item.parsed.y;
+                  },
+                  afterBody: function(items) {
+                    // Check if a wicket fell on this exact x point
+                    var x = items[0].parsed.x;
+                    var wkt = wicketPoints.find(function(w) { return Math.abs(w.x - x) < 0.05; });
+                    return wkt ? [' \u26ab W' + wkt.wktNum + ' fell here'] : [];
+                  },
+                },
+              },
+            },
+          },
+        });
+      });
+    }
     async function updateChartFromBalls(canvasId, balls, inn1, inn2, abbr1, abbr2, vAvg) {
       if (!balls || !balls.length) return;
       const target = inn1 ? inn1.runs + 1 : null;
@@ -2120,10 +2326,16 @@
               (canChart
                 ? (
                   '<div class="win-prob-chart-wrap">' +
-                    '<div class="win-prob-chart-title">' +
-                      '<span class="win-prob-chart-label">Simulator Win Probability</span>' +
-                    '</div>' +
-                    '<div class="win-prob-canvas-wrap"><canvas id="' + chartId + '"></canvas></div>' +
+                  (inn2 && inn2.runs != null
+                    ? (
+                      '<div class="win-prob-chart-title"><span class="win-prob-chart-label">Simulator Win Probability</span></div>' +
+                      '<div class="win-prob-canvas-wrap"><canvas id="' + chartId + '"></canvas></div>'
+                    )
+                    : (
+                      '<div class="win-prob-chart-title"><span class="win-prob-chart-label">Inn 1 \u00b7 Projected Total</span></div>' +
+                      '<div class="win-prob-canvas-wrap"><canvas id="inn1-' + chartId + '"></canvas></div>'
+                    )
+                  ) +
                   '</div>'
                 )
                 : '') +
@@ -2146,21 +2358,40 @@
         );
       }).join('');
 
-      // Hydrate simulator charts from scorecard balls.
+      // Hydrate charts: inn1 → projected total only; inn2 → win probability only.
       matches.forEach(function(m) {
         const status = m.status || 'unknown';
         if (!(status === 'live' || status === 'completed')) return;
         if (!m.matchId || !m.slug || !m.innings1 || m.innings1.runs == null) return;
-        const chartId = 'wp-' + m.matchId;
+
+        const inn2Started = m.innings2 && m.innings2.runs != null;
+        const chartId     = 'wp-' + m.matchId;
+        const inn1ChartId = 'inn1-wp-' + m.matchId;
         const team1 = (m.teams || [])[0] || 'Team 1';
         const team2 = (m.teams || [])[1] || 'Team 2';
         const abbr1 = teamAbbr[team1] || team1;
         const abbr2 = teamAbbr[team2] || team2;
-        const url = '/api/scorecard?matchId=' + encodeURIComponent(m.matchId) + '&slug=' + encodeURIComponent(m.slug) + '&teams=' + encodeURIComponent(JSON.stringify(m.teams || []));
+        const dark  = getTheme() === 'dark';
+
+        const url = '/api/scorecard?matchId=' + encodeURIComponent(m.matchId) +
+                    '&slug=' + encodeURIComponent(m.slug) +
+                    '&teams=' + encodeURIComponent(JSON.stringify(m.teams || []));
+
         fetch(url)
-          .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-          .then(function(d){ return updateChartFromBalls(chartId, d.balls || [], m.innings1, m.innings2 || null, abbr1, abbr2, venueAvgTotal(m.venue || '')); })
-          .catch(function(){});
+          .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function(d) {
+            const balls = d.balls || [];
+            if (inn2Started) {
+              // Innings 2 in progress / complete → win probability chart
+              return updateChartFromBalls(chartId, balls, m.innings1, m.innings2, abbr1, abbr2, venueAvgTotal(m.venue || ''));
+            } else {
+              // Innings 1 in progress → projected total chart
+              const inn1Balls  = balls.filter(function(b) { return b.innings === 1; });
+              const actualFinal = m.innings1.runs != null ? m.innings1.runs : null;
+              renderInn1PredChart(inn1ChartId, inn1Balls, actualFinal, abbr1, dark);
+            }
+          })
+          .catch(function() {});
       });
 
     }
