@@ -82,7 +82,7 @@ function latestBallForInnings(balls, innings) {
 function parseScoreTuples(html) {
   const out = [];
   const seen = new Set();
-  const re = /(\d{1,3})\/(\d{1,2})\s*\((\d{1,2}\.\d)\)/g;
+  const re = /(\d{1,3})\/(\d{1,2})\s*\((\d{1,2}(?:\.\d)?)\)/g;
   let m;
   while ((m = re.exec(html)) !== null) {
     const runs = Number(m[1]);
@@ -117,7 +117,7 @@ function parseScoresFromTitleHtml(html, teams) {
   const left = title.slice(0, vsIdx);
   const right = title.slice(vsIdx + 4);
 
-  const re = /([A-Z]{2,5})\s+(\d{1,3})\/(\d{1,2})\s*\((\d{1,2}\.\d)\)/g;
+  const re = /([A-Z]{2,5})\s+(\d{1,3})\/(\d{1,2})\s*\((\d{1,2}(?:\.\d)?)\)/g;
   const chunks = [];
   let m;
   while ((m = re.exec(left + ' | ' + right)) !== null && chunks.length < 2) {
@@ -286,7 +286,7 @@ async function getLiveMatchesData() {
     let status = 'upcoming';
     let result = 'Upcoming';
     const isCompleted = /won by|completed|final| \w+ won/i.test(text);
-    const isLive = !isCompleted && /opt to bat|opt to bowl|toss|live|batting|bowling|running|need|runs|crr|rrr|\d+\/\d+/i.test(text);
+    const isLive = !isCompleted && /opt to bat|opt to bowl|toss|live|batting|bowling|running|need|runs|crr|rrr|innings break|\d+\/\d+/i.test(text);
 
     if (isCompleted) {
       status = 'completed';
