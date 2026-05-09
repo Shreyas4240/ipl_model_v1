@@ -146,7 +146,7 @@ module.exports = async function handler(req, res) {
       };
     });
 
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=30');
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(200).json({
       matches: predictedMatches,

@@ -110,7 +110,7 @@ module.exports = async function handler(req, res) {
       const target = Number(match.innings1.runs || 0) + 1;
       
       const legalBallsBowled = oversToBalls(overs);
-      const sims = 3000; // Sufficient for a quick API response
+      const sims = 1000; // Reduced from 3000 for CPU optimization
       
       let wins = 0;
       for (let i = 0; i < sims; i++) {
@@ -139,7 +139,7 @@ module.exports = async function handler(req, res) {
       };
     });
 
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=30');
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(200).json({
       matches: matchesWithProb,

@@ -285,20 +285,29 @@ async function getLiveMatchesData() {
 
     let status = 'upcoming';
     let result = 'Upcoming';
-    const isCompleted = /won by|completed|final| \w+ won/i.test(text);
-    const isLive = !isCompleted && /opt to bat|opt to bowl|toss|live|batting|bowling|running|need|runs|crr|rrr|innings break|\d+\/\d+/i.test(text);
+    const isCompleted = /won by|completed|final|abandoned|no result|shared| \w+ won/i.test(text);
+    const isLive = !isCompleted && /opt to bat|opt to bowl|toss|live|batting|bowling|running|need|runs|crr|rrr|innings break|rain|delay|stoppage|interrupted|\d+\/\d+/i.test(text);
 
     if (isCompleted) {
       status = 'completed';
       const winnerMatch = text.match(/(\w+) won/i);
       if (winnerMatch) {
         result = `${getFullTeamName(winnerMatch[1])} won`;
+      } else if (/abandoned/i.test(text)) {
+        result = 'Match abandoned';
+      } else if (/no result/i.test(text)) {
+        result = 'No result';
       } else {
         result = 'Match completed';
       }
     } else if (isLive) {
       status = 'live';
       result = 'In progress';
+      const rainMatch = text.match(/(rain stops play|rain|delayed|wet outfield|stoppage|interrupted|innings break)/i);
+      if (rainMatch) {
+        result = rainMatch[0].charAt(0).toUpperCase() + rainMatch[0].slice(1).toLowerCase();
+        if (result === 'Innings break') result = 'Innings Break';
+      }
     }
 
     matches.push({
@@ -351,7 +360,7 @@ async function getLiveMatchesData() {
 async function handler(req, res) {
   try {
     const data = await getLiveMatchesData();
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=30');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     return res.status(200).json(data);
