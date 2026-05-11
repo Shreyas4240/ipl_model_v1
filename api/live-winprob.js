@@ -74,7 +74,7 @@ function simulateOnce(model, runs, wickets, target, legalBallsBowled) {
     }
     b += 1;
   }
-  return r >= target ? 1 : 0;
+  return { win: r >= target ? 1 : 0, finalScore: r };
 }
 
 /**
@@ -110,15 +110,31 @@ module.exports = async function handler(req, res) {
       const target = Number(match.innings1.runs || 0) + 1;
       
       const legalBallsBowled = oversToBalls(overs);
-      const sims = 1000; // Reduced from 3000 for CPU optimization
+      const ballsRemaining = Math.max(0, 120 - legalBallsBowled);
+      const runsNeeded = Math.max(0, target - runs);
+      const targetRrr = ballsRemaining > 0 ? (runsNeeded / ballsRemaining) * 6 : 0;
+
+      const sims = 1000; 
       
       let wins = 0;
+      let totalFinalScore = 0;
       for (let i = 0; i < sims; i++) {
-        wins += simulateOnce(model, runs, wickets, target, legalBallsBowled);
+        const { win, finalScore } = simulateOnce(model, runs, wickets, target, legalBallsBowled);
+        wins += win;
+        totalFinalScore += finalScore;
       }
       
       const p = wins / sims;
+      const meanFinalScore = totalFinalScore / sims;
       
+      // Expected RR is what the model thinks they will score from this position
+      const expectedRunsFromHere = meanFinalScore - runs;
+      const expectedRr = ballsRemaining > 0 ? (expectedRunsFromHere / ballsRemaining) * 6 : 0;
+      
+      // Pressure Index: Ratio of required to expected. 
+      // 1.0 = on track, > 1.0 = high pressure, < 1.0 = cruising
+      const pressureIndex = expectedRr > 0 ? targetRrr / expectedRr : (targetRrr > 0 ? 5 : 0);
+
       return {
         ...match,
         win_probability: {
@@ -127,13 +143,19 @@ module.exports = async function handler(req, res) {
           chasing_win_prob: Math.round(p * 100) / 100,
           defending_win_prob: Math.round((1 - p) * 100) / 100,
           sims,
+          pressure: {
+            index: Math.min(5, Math.round(pressureIndex * 100) / 100),
+            label: pressureIndex > 1.5 ? 'extreme' : pressureIndex > 1.2 ? 'high' : pressureIndex > 0.9 ? 'moderate' : 'low',
+            target_rrr: Math.round(targetRrr * 100) / 100,
+            expected_rr: Math.round(expectedRr * 100) / 100
+          },
           state: {
             runs,
             wickets,
             overs,
             target,
-            runs_needed: Math.max(0, target - runs),
-            balls_remaining: Math.max(0, 120 - legalBallsBowled)
+            runs_needed: runsNeeded,
+            balls_remaining: ballsRemaining
           }
         }
       };
