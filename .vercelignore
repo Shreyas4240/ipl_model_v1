@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
+*.py
 .pytest_cache/
 .venv/
 venv/
 scripts/
+scratch/
