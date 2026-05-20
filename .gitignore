@@ -6,8 +6,9 @@ ops/logs/
 *.log
 __pycache__/
 scripts/__pycache__/
-models/*.pkl
-models/*.png
+# Keep model files for deployment
+# models/*.pkl
+# models/*.png
 ipl_male_json_small/
 data/winprob_test_raw.csv
 data/winprob_training_raw.csv

@@ -1,6 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": null,
+  "outputDirectory": null,
   "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs18.x"
+    },
     "api/live.js": {
       "memory": 512,
       "maxDuration": 10
