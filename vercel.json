@@ -3,9 +3,6 @@
   "buildCommand": null,
   "outputDirectory": null,
   "functions": {
-    "api/**/*.js": {
-      "runtime": "nodejs18.x"
-    },
     "api/live.js": {
       "memory": 512,
       "maxDuration": 10
