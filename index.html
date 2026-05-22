@@ -2298,10 +2298,18 @@
 
         const resultText = m.result || '';
         const isWin = /won by/i.test(resultText);
-        const statusLine = isWin ? resultText
+        let statusLine = isWin ? resultText
           : status === 'live' ? 'In progress'
           : status === 'upcoming' ? 'Match not started'
           : resultText || '';
+
+        if (status === 'live' && inn1 && inn1.runs != null && inn2 && inn2.runs != null) {
+          const target = inn1.runs + 1;
+          const runsNeeded = Math.max(0, target - inn2.runs);
+          const legalBalls = _oversToBalls(inn2.overs);
+          const ballsRemaining = Math.max(0, 120 - legalBalls);
+          statusLine += ' — ' + runsNeeded + ' off ' + ballsRemaining;
+        }
 
         
         const predInn = inn2 || inn1;

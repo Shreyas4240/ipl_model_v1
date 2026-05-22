@@ -1,0 +1,7 @@
+[project]
+name = "ipl-score-prediction-model"
+version = "1.0.0"
+
+[tool.vercel]
+# Configure Python entrypoint (dummy, project uses Node.js)
+entrypoint = "scripts.app:app"

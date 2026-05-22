@@ -12,3 +12,4 @@ scripts/__pycache__/
 ipl_male_json_small/
 data/winprob_test_raw.csv
 data/winprob_training_raw.csv
+.env*.local
