@@ -7,3 +7,4 @@ venv/
 scripts/
 scratch/
 **/*.py
+odis_json/

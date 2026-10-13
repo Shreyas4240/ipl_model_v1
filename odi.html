@@ -1,0 +1,2279 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ODI resource model: predicted vs actual scores (2023+), MAE, 50-over piecewise Z₀ and run-rate shrinkage, live ODI score predictor, Monte Carlo chase win probability simulator." />
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+  <title>ODI Resource Model & Win Probability</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── THEME TOKENS ────────────────────────────────────── */
+    :root {
+      --bg:        #ffffff;
+      --bg-2:      #f5f5f5;
+      --bg-3:      #ebebeb;
+      --border:    #d4d4d4;
+      --border-2:  #b8b8b8;
+      --text:      #0a0a0a;
+      --text-2:    #404040;
+      --text-3:    #737373;
+      --accent:    #0a0a0a;
+      --green:     #16a34a;
+      --amber:     #b45309;
+      --red:       #dc2626;
+      --invert:    invert(0);
+    }
+    [data-theme="dark"] {
+      --bg:        #0a0a0a;
+      --bg-2:      #141414;
+      --bg-3:      #1f1f1f;
+      --border:    #2a2a2a;
+      --border-2:  #3d3d3d;
+      --text:      #fafafa;
+      --text-2:    #d4d4d4;
+      --text-3:    #737373;
+      --accent:    #fafafa;
+      --green:     #4ade80;
+      --amber:     #fbbf24;
+      --red:       #f87171;
+      --invert:    invert(1);
+    }
+
+    /* ── RESET + BASE ────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Sora', sans-serif;
+      font-size: 15px;
+      font-weight: 400;
+      line-height: 1.6;
+      transition: background 0.2s, color 0.2s;
+      overflow-x: hidden;
+    }
+
+    /* ── LAYOUT ──────────────────────────────────────────── */
+    .container {
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 3rem 2.5rem 5rem;
+    }
+
+    /* ── HEADER ──────────────────────────────────────────── */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 3rem;
+      padding-bottom: 2rem;
+      border-bottom: 2px solid var(--text);
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .subtitle {
+      color: var(--text-3);
+      font-size: 0.875rem;
+      font-weight: 400;
+      margin-top: 0.4rem;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── FORMAT NAVIGATION ───────────────────────────────── */
+    .format-nav {
+      display: inline-flex;
+      background: var(--bg-2);
+      border: 1.5px solid var(--border);
+      border-radius: 9999px;
+      padding: 3px;
+      margin-bottom: 0.85rem;
+      gap: 3px;
+    }
+    .format-tab {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.95rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-decoration: none;
+      color: var(--text-3);
+      transition: all 0.15s ease;
+    }
+    .format-tab:hover {
+      color: var(--text);
+      text-decoration: none;
+    }
+    .format-tab.active {
+      background: var(--text);
+      color: var(--bg);
+      text-decoration: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* ── THEME TOGGLE ────────────────────────────────────── */
+    .theme-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: none;
+      border: 1.5px solid var(--border-2);
+      border-radius: 999px;
+      padding: 0.4rem 0.9rem;
+      cursor: pointer;
+      color: var(--text);
+      font-family: 'Sora', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .theme-toggle:hover {
+      border-color: var(--text);
+      background: var(--bg-2);
+    }
+    .theme-toggle .icon { font-size: 0.95rem; line-height: 1; }
+
+    /* ── SECTIONS ────────────────────────────────────────── */
+    section {
+      margin-bottom: 4rem;
+    }
+    h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    h2::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── LIVE PREDICTOR ──────────────────────────────────── */
+    .live-predictor-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr) 1.5fr;
+      gap: 1.25rem;
+      align-items: start;
+      background: var(--bg-2);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      padding: 1.75rem;
+    }
+    @media (max-width: 900px) {
+      .live-predictor-grid { grid-template-columns: 1fr 1fr; }
+      .prediction-result { grid-column: span 2; }
+    }
+    @media (max-width: 500px) {
+      .live-predictor-grid { grid-template-columns: 1fr; }
+      .prediction-result { grid-column: span 1; }
+    }
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-2);
+    }
+    input[type="number"],
+    input[type="text"],
+    select {
+      background: var(--bg);
+      border: 1.5px solid var(--border-2);
+      border-radius: 3px;
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.15rem;
+      font-weight: 500;
+      padding: 0.6rem 0.85rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      width: 100%;
+      outline: none;
+    }
+    input[type="number"]:focus,
+    input[type="text"]:focus,
+    select:focus {
+      border-color: var(--text);
+      box-shadow: 0 0 0 1px var(--text);
+    }
+    .live-overs-hint {
+      font-size: 0.72rem;
+      color: var(--text-3);
+      font-family: 'IBM Plex Mono', monospace;
+      margin-top: 0.2rem;
+      min-height: 1.1em;
+      line-height: 1.25;
+    }
+    .live-overs-hint.invalid {
+      color: var(--red);
+      font-weight: 500;
+    }
+    input.input-invalid {
+      border-color: var(--red) !important;
+      box-shadow: 0 0 0 1px var(--red) !important;
+    }
+    .prediction-result {
+      background: var(--bg-3);
+      border: 1.5px solid var(--border);
+      border-radius: 3px;
+      padding: 1rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 82px;
+    }
+    .prediction-value {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 2.25rem;
+      font-weight: 500;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .prediction-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-top: 0.35rem;
+    }
+    .live-rr-eff-detail {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.68rem;
+      font-weight: 400;
+      letter-spacing: normal;
+      text-transform: none;
+      color: var(--text-2);
+      margin-top: 0.35rem;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .live-rr-shrink-note {
+      margin-top: 0.85rem;
+      font-size: 0.75rem;
+      color: var(--text-3);
+      line-height: 1.45;
+    }
+
+    /* ── LIVE MATCHES SECTION ────────────────────────────── */
+    .live-section-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+    .live-updated {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text-3);
+    }
+    .live-cache-btn {
+      background: none;
+      border: 1px solid var(--border-2);
+      border-radius: 3px;
+      color: var(--text-3);
+      cursor: pointer;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      padding: 0.25rem 0.55rem;
+      transition: all 0.12s;
+    }
+    .live-cache-btn:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+    .live-refresh-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: none;
+      border: 1.5px solid var(--border-2);
+      border-radius: 3px;
+      cursor: pointer;
+      color: var(--text-2);
+      transition: all 0.12s;
+      flex-shrink: 0;
+    }
+    .live-refresh-btn:hover { border-color: var(--text); color: var(--text); }
+    .live-refresh-btn.loading .live-refresh-spinner {
+      animation: spin 0.75s linear infinite;
+    }
+    .live-refresh-spinner {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border: 1.5px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .live-match-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 1.25rem;
+    }
+    @media (max-width: 440px) {
+      .live-match-list { grid-template-columns: 1fr; }
+    }
+    .live-match-card {
+      background: var(--bg-2);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .live-match-card:hover { border-color: var(--border-2); }
+    .live-card-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 1rem;
+      background: var(--bg-3);
+      border-bottom: 1px solid var(--border);
+    }
+    .live-card-series {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+    }
+    .live-match-badge {
+      display: inline-block;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.5rem;
+      border-radius: 2px;
+      border: 1px solid var(--border-2);
+      color: var(--text-3);
+    }
+    .live-match-badge.live {
+      border-color: var(--green);
+      color: var(--green);
+      background: rgba(22, 163, 74, 0.08);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+    .live-match-badge.completed {
+      border-color: var(--border-2);
+      color: var(--text-3);
+    }
+    .live-match-badge.upcoming {
+      border-color: var(--amber);
+      color: var(--amber);
+      background: rgba(180, 83, 9, 0.08);
+    }
+
+    .live-card-body {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      flex: 1;
+    }
+    .team-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .team-logo-wrap {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .team-logo {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      border-radius: 50%;
+    }
+    .team-logo-fallback {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+    .team-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .team-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+    .team-name-abbr {
+      font-size: 0.72rem;
+      color: var(--text-3);
+      font-family: 'IBM Plex Mono', monospace;
+      line-height: 1.2;
+    }
+    .team-score-wrap {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .team-score {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .team-score.batting {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .team-score.not-batting {
+      color: var(--text-3);
+      font-size: 0.8rem;
+    }
+    .team-overs {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--text-3);
+      line-height: 1.2;
+    }
+    .team-row-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 0.1rem 0;
+    }
+    .live-card-result {
+      font-size: 0.75rem;
+      color: var(--text-3);
+      margin-top: 0.25rem;
+      line-height: 1.35;
+    }
+    .live-card-result.result-win {
+      color: var(--text-2);
+      font-weight: 500;
+    }
+
+    .live-card-footer {
+      padding: 0.75rem 1rem;
+      background: var(--bg-3);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .live-match-btn {
+      background: var(--bg);
+      border: 1.5px solid var(--border-2);
+      border-radius: 3px;
+      color: var(--text);
+      cursor: pointer;
+      font-family: 'Sora', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      padding: 0.4rem 0.85rem;
+      transition: all 0.12s;
+    }
+    .live-match-btn:hover:not(:disabled) {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+    .live-match-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .live-match-empty {
+      grid-column: 1 / -1;
+      padding: 2.5rem 1rem;
+      text-align: center;
+      color: var(--text-3);
+      font-size: 0.85rem;
+      background: var(--bg-2);
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+    }
+
+    /* ── WIN PROBABILITY CHART CONTAINER ─────────────────── */
+    .win-prob-chart-wrap {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+    .win-prob-chart-title {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .win-prob-canvas-wrap {
+      position: relative;
+      height: 120px;
+      width: 100%;
+    }
+
+    /* ── RECENT SECTION ──────────────────────────────────── */
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .control-row select {
+      max-width: 240px;
+      font-size: 0.85rem;
+      padding: 0.45rem 0.75rem;
+    }
+    .summary {
+      display: flex;
+      gap: 2rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .stat-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+    .stat-value {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.6rem;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.1;
+    }
+
+    .equation-block {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.85rem 1.25rem;
+      margin-bottom: 1.5rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--text-2);
+      line-height: 1.55;
+    }
+    .eq-main { font-weight: 500; color: var(--text); }
+    .eq-sub  { font-size: 0.72rem; color: var(--text-3); margin-top: 0.25rem; }
+
+    /* ── KEYPAD SECTION ──────────────────────────────────── */
+    .keypad-section {
+      background: var(--bg-2);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      align-items: center;
+    }
+    .keypad-phase {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.85rem;
+      background: var(--bg);
+      border: 1px solid var(--border-2);
+      border-radius: 3px;
+    }
+    .keypad-phase-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-right: 0.25rem;
+    }
+    .keypad-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+    .keypad-val {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 500;
+      min-width: 3.5rem;
+      text-align: center;
+    }
+    .keypad-btn {
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-2);
+      border-radius: 3px;
+      background: var(--bg-2);
+      color: var(--text);
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.1s;
+    }
+    .keypad-btn:hover:not(:disabled) { background: var(--text); color: var(--bg); }
+    .keypad-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .simulated-stat {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-2);
+    }
+    .keypad-reset {
+      margin-left: auto;
+      padding: 0.4rem 0.85rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      background: transparent;
+      border: 1.5px solid var(--border-2);
+      color: var(--text-3);
+      border-radius: 4px;
+      font-family: 'Sora', sans-serif;
+      transition: all 0.1s;
+    }
+    .keypad-reset:hover { border-color: var(--text); color: var(--text); }
+    .keypad-hint {
+      margin: 0;
+      font-size: 0.72rem;
+      color: var(--text-3);
+      width: 100%;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── CHARTS ──────────────────────────────────────────── */
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-top: 1.25rem;
+    }
+    .chart-wrap-full { grid-column: 1 / -1; }
+    @media (max-width: 680px) { .charts { grid-template-columns: 1fr; } }
+    .chart-box {
+      background: var(--bg-3);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem;
+    }
+    .chart-box h3 {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 0.75rem;
+    }
+    .chart-wrap { position: relative; height: 240px; }
+
+    /* ── TABLE ───────────────────────────────────────────── */
+    .table-scroll {
+      overflow-x: auto;
+      margin-top: 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+    thead {
+      background: var(--bg-2);
+      border-bottom: 1.5px solid var(--border);
+    }
+    th {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+    }
+    td {
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-2);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg-2); }
+    .num { font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; }
+    .error-low  { color: var(--green); font-weight: 500; }
+    .error-mid  { color: var(--amber); }
+    .error-high { color: var(--red); }
+
+    /* ── STATES ──────────────────────────────────────────── */
+    .loading {
+      font-size: 0.8rem;
+      color: var(--text-3);
+      letter-spacing: 0.05em;
+      padding: 0.5rem 0;
+    }
+    .empty {
+      font-size: 0.82rem;
+      color: var(--text-3);
+      font-style: italic;
+      padding: 0.5rem 0;
+    }
+    a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+    a:hover { color: var(--text-3); }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <header class="page-header">
+      <div class="page-header-left">
+        <nav class="format-nav" aria-label="Format selector">
+          <a href="/index.html" class="format-tab">IPL (T20)</a>
+          <a href="/odi.html" class="format-tab active">ODI (50-Over)</a>
+        </nav>
+        <h1>ODI Resource Model</h1>
+        <p class="subtitle">50-over mid-innings score predictor & chase win probability simulator</p>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+        <span class="icon" id="theme-icon">☀</span>
+        <span id="theme-label">Light</span>
+      </button>
+    </header>
+
+    <section aria-labelledby="prediction-heading">
+      <h2 id="prediction-heading">Live Score Predictor (50 Overs)</h2>
+      <div class="live-predictor-grid">
+        <div class="input-group">
+          <label for="live-runs">Runs</label>
+          <input type="number" id="live-runs" min="0" max="600" value="145" />
+        </div>
+        <div class="input-group">
+          <label for="live-wickets">Wickets lost (0–10)</label>
+          <input type="number" id="live-wickets" min="0" max="10" value="3" />
+        </div>
+        <div class="input-group input-group-overs">
+          <label for="live-overs">Overs bowled</label>
+          <input type="text" id="live-overs" inputmode="decimal" autocomplete="off" placeholder="e.g. 25 or 32.4" value="28" />
+          <p class="live-overs-hint" id="live-overs-hint" aria-live="polite"></p>
+        </div>
+        <div class="prediction-result">
+          <div class="prediction-value" id="live-prediction-val">—</div>
+          <div class="prediction-label">Predicted Final Score</div>
+          <div class="prediction-label live-rr-eff-detail" id="live-rr-eff-detail" aria-live="polite"></div>
+        </div>
+      </div>
+      <p class="live-rr-shrink-note" id="live-rr-shrink-note"></p>
+    </section>
+
+    <section aria-labelledby="live-odi-heading">
+      <h2 id="live-odi-heading">Live ODI Matches</h2>
+      <div class="live-section-meta">
+        <span class="live-updated" id="live-updated"></span>
+        <div style="display:flex;align-items:center;gap:0.4rem;">
+          <button class="live-cache-btn" id="cache-clear-btn" onclick="clearLiveWinProbCache()" aria-label="Clear win probability cache">
+            Clear graph
+          </button>
+          <button class="live-refresh-btn" id="live-refresh-btn" aria-label="Refresh live scores">
+            <span class="live-refresh-spinner"></span>
+          </button>
+        </div>
+      </div>
+      <p class="loading" id="live-matches-loading">Loading…</p>
+      <div class="live-match-list" id="live-match-list"></div>
+    </section>
+
+    <section aria-labelledby="recent-heading">
+      <h2 id="recent-heading">Recent ODI matches — model vs actual</h2>
+      <div class="control-row">
+        <label for="days-select">Period</label>
+        <select id="days-select">
+          <option value="180">Last 6 months</option>
+          <option value="365">Last 1 year</option>
+          <option value="730">Last 2 years</option>
+          <option value="9999" selected>All time (2023–present)</option>
+        </select>
+      </div>
+      <div class="equation-block" aria-label="Model equation">
+        <div class="eq-main">Predicted = current_score + RR<sub>eff</sub> × C<sub>k</sub> × (1−e<sup>−b<sub>k</sub>×overs_remaining</sup>) × e<sup>−a<sub>k</sub>×W<sub>lost</sub><sup>γ</sup></sup></div>
+        <div class="eq-sub">RR<sub>eff</sub> = α<sub>k</sub> × (runs ÷ overs) + (1−α<sub>k</sub>) × μ̄<sub>k</sub> · k = 10-over phase (1–10 through 41–50), blended smoothly near each boundary</div>
+      </div>
+      <div class="keypad-section" id="keypad-section" style="display: none;">
+        <div class="keypad-phase" data-phase="0">
+          <span class="keypad-phase-label">Overs 1–10</span>
+          <span class="keypad-label">Z₀</span>
+          <span class="keypad-val" id="keypad-z0-0">—</span>
+          <button type="button" class="keypad-btn" id="keypad-z0-minus-0" aria-label="Decrease Z0 phase 1">−</button>
+          <button type="button" class="keypad-btn" id="keypad-z0-plus-0" aria-label="Increase Z0 phase 1">+</button>
+          <span class="keypad-label">a</span>
+          <span class="keypad-val" id="keypad-a-0">—</span>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-0" aria-label="Decrease a phase 1">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-0" aria-label="Increase a phase 1">+</button>
+        </div>
+        <div class="keypad-phase" data-phase="1">
+          <span class="keypad-phase-label">Overs 11–20</span>
+          <span class="keypad-label">Z₀</span>
+          <span class="keypad-val" id="keypad-z0-1">—</span>
+          <button type="button" class="keypad-btn" id="keypad-z0-minus-1">−</button>
+          <button type="button" class="keypad-btn" id="keypad-z0-plus-1">+</button>
+          <span class="keypad-label">a</span>
+          <span class="keypad-val" id="keypad-a-1">—</span>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-1">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-1">+</button>
+        </div>
+        <div class="keypad-phase" data-phase="2">
+          <span class="keypad-phase-label">Overs 21–30</span>
+          <span class="keypad-label">Z₀</span>
+          <span class="keypad-val" id="keypad-z0-2">—</span>
+          <button type="button" class="keypad-btn" id="keypad-z0-minus-2">−</button>
+          <button type="button" class="keypad-btn" id="keypad-z0-plus-2">+</button>
+          <span class="keypad-label">a</span>
+          <span class="keypad-val" id="keypad-a-2">—</span>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-2">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-2">+</button>
+        </div>
+        <div class="keypad-phase" data-phase="3">
+          <span class="keypad-phase-label">Overs 31–40</span>
+          <span class="keypad-label">Z₀</span>
+          <span class="keypad-val" id="keypad-z0-3">—</span>
+          <button type="button" class="keypad-btn" id="keypad-z0-minus-3">−</button>
+          <button type="button" class="keypad-btn" id="keypad-z0-plus-3">+</button>
+          <span class="keypad-label">a</span>
+          <span class="keypad-val" id="keypad-a-3">—</span>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-3">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-3">+</button>
+        </div>
+        <div class="keypad-phase" data-phase="4">
+          <span class="keypad-phase-label">Overs 41–50</span>
+          <span class="keypad-label">Z₀</span>
+          <span class="keypad-val" id="keypad-z0-4">—</span>
+          <button type="button" class="keypad-btn" id="keypad-z0-minus-4">−</button>
+          <button type="button" class="keypad-btn" id="keypad-z0-plus-4">+</button>
+          <span class="keypad-label">a</span>
+          <span class="keypad-val" id="keypad-a-4">—</span>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-4">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-4">+</button>
+        </div>
+        <span class="simulated-stat" id="simulated-mae">Simulated MAE: —</span>
+        <span class="simulated-stat" id="simulated-rmse">Simulated RMSE: —</span>
+        <button type="button" class="keypad-reset" id="keypad-reset">Reset to model</button>
+        <p class="keypad-hint">Adjust each segment with +/−; charts update (no typing).</p>
+      </div>
+      <div class="summary" id="recent-summary"></div>
+      <div class="charts" id="recent-charts" style="display: none;">
+        <div class="chart-box">
+          <h3>Predicted vs actual final score</h3>
+          <div class="chart-wrap"><canvas id="chart-pred-actual"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <h3>Prediction error distribution (runs)</h3>
+          <div class="chart-wrap"><canvas id="chart-error-dist"></canvas></div>
+        </div>
+        <div class="chart-box chart-wrap-full">
+          <h3>Resource model — exponential curve (50 overs)</h3>
+          <div class="chart-wrap"><canvas id="chart-resource-curve"></canvas></div>
+        </div>
+      </div>
+      <div class="table-scroll" id="recent-table-wrap"></div>
+      <p class="loading" id="recent-loading">Loading…</p>
+    </section>
+
+  </div>
+
+  <script>
+    /* ── THEME TOGGLE ──────────────────────────────────── */
+    const html = document.documentElement;
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeLabel = document.getElementById('theme-label');
+
+    function getTheme() { return html.getAttribute('data-theme'); }
+    function setTheme(t) {
+      html.setAttribute('data-theme', t);
+      if (t === 'dark') { themeIcon.textContent = '☀'; themeLabel.textContent = 'Light'; }
+      else              { themeIcon.textContent = '☽'; themeLabel.textContent = 'Dark';  }
+      if (lastRawResults.length) applyKeypadParams();
+    }
+    themeToggle.addEventListener('click', () => setTheme(getTheme() === 'dark' ? 'light' : 'dark'));
+
+    /* ── CHART HELPERS ─────────────────────────────────── */
+    function chartColors() {
+      const dark = getTheme() === 'dark';
+      return {
+        text:    dark ? '#737373' : '#737373',
+        grid:    dark ? 'rgba(42,42,42,0.7)' : 'rgba(212,212,212,0.7)',
+        accent:  dark ? '#fafafa' : '#0a0a0a',
+        blue:    dark ? '#60a5fa' : '#2563eb',
+        green:   dark ? '#4ade80' : '#16a34a',
+        amber:   dark ? '#fbbf24' : '#b45309',
+        red:     dark ? '#f87171' : '#dc2626',
+        purple:  dark ? '#c084fc' : '#7c3aed',
+        cyan:    dark ? '#67e8f9' : '#0891b2',
+      };
+    }
+
+    /* ── ODI RESOURCE MODEL PARAMETERS & LOGIC ──────────── */
+    let chartPredActual = null;
+    let chartErrorDist = null;
+    let chartResourceCurve = null;
+    let lastRawResults = [];
+    let lastModelParams = null;
+    let keypadZ0 = [null, null, null, null, null];
+    let keypadA = [null, null, null, null, null];
+    const ODI_PHASE_BOUNDARIES = [10, 20, 30, 40];
+    const ODI_PHASE_COUNT = 5;
+    const Z0_MIN = 1.0, Z0_MAX = 2.5, Z0_STEP = 0.05;
+    const A_MIN = 0.0, A_MAX = 0.25, A_STEP = 0.005;
+
+    // Fallbacks for the filtered first-innings ODI model (2023–present).
+    const DEFAULT_RR_SHRINK = {
+      alpha_by_phase: [0.20, 0.28, 0.35, 0.45, 0.55],
+      mu_by_phase: [5.4, 5.6, 5.8, 6.4, 7.2],
+    };
+
+    function getRRShrink() {
+      const s = lastModelParams && lastModelParams.rr_shrinkage;
+      if (
+        s &&
+        Array.isArray(s.alpha_by_phase) &&
+        s.alpha_by_phase.length === ODI_PHASE_COUNT &&
+        Array.isArray(s.mu_by_phase) &&
+        s.mu_by_phase.length === ODI_PHASE_COUNT
+      ) {
+        return { alphaByPhase: s.alpha_by_phase.map(Number), muByPhase: s.mu_by_phase.map(Number) };
+      }
+      return {
+        alphaByPhase: DEFAULT_RR_SHRINK.alpha_by_phase.slice(),
+        muByPhase: DEFAULT_RR_SHRINK.mu_by_phase.slice(),
+      };
+    }
+
+    // ODI Phases: five equal 10-over segments.
+    function odiPhase(oversCompleted) {
+      const oc = Number(oversCompleted);
+      for (let i = 0; i < ODI_PHASE_BOUNDARIES.length; i++) {
+        if (oc <= ODI_PHASE_BOUNDARIES[i]) return i;
+      }
+      return ODI_PHASE_COUNT - 1;
+    }
+
+    function effectiveRunRateClient(runRate, oversCompleted) {
+      const k = odiPhase(oversCompleted);
+      const { alphaByPhase, muByPhase } = getRRShrink();
+      const alpha = alphaByPhase[k];
+      const mu = muByPhase[k];
+      return alpha * Number(runRate) + (1 - alpha) * mu;
+    }
+
+    function refreshRRShrinkNote() {
+      const el = document.getElementById('live-rr-shrink-note');
+      if (!el) return;
+      const { alphaByPhase } = getRRShrink();
+      const labs = ['overs 1–10', '11–20', '21–30', '31–40', '41–50'];
+      el.textContent =
+        'Run rate uses ODI per-segment shrink: RR_eff = α_k×observed + (1−α_k)×μ̄_k. ' +
+        'Fitted α ≈ ' +
+        alphaByPhase.map((a, i) => labs[i] + ' ' + a.toFixed(3)).join(', ') +
+        ' (2023+ filtered men\'s ODIs).';
+    }
+
+    function getPhaseParams(phaseIdx) {
+      const phases = (lastModelParams && lastModelParams.phases) || [];
+      const base = phases[phaseIdx] || { Z0: 1.4, a: 0.01 };
+      const Z0 = keypadZ0[phaseIdx] != null ? keypadZ0[phaseIdx] : base.Z0;
+      const a = keypadA[phaseIdx] != null ? keypadA[phaseIdx] : base.a;
+      return { Z0, a };
+    }
+
+    function getResourceModelParams() {
+      const m = lastModelParams && lastModelParams.resource_model;
+      if (m && Array.isArray(m.phases) && m.phases.length === ODI_PHASE_COUNT) {
+        return {
+          phases: m.phases,
+          wicketGamma: Number(m.wicket_gamma || 2.288),
+          phaseBlendOvers: Number(m.phase_blend_overs || 1.0),
+        };
+      }
+      return {
+        phases: [
+          { C: 55.0078, b: 0.0486, a_w: 0.0288 },
+          { C: 52.0, b: 0.0400, a_w: 0.0060 },
+          { C: 49.9556, b: 0.0495, a_w: 0.0142 },
+          { C: 45.0, b: 0.0420, a_w: 0.0040 },
+          { C: 39.9974, b: 0.0621, a_w: 0.0074 },
+        ],
+        wicketGamma: 2.288,
+        phaseBlendOvers: 1.0,
+      };
+    }
+
+    function resourceForPhaseClient(phaseIdx, oversRem, wicketsRem, model) {
+      const p = model.phases[phaseIdx] || {};
+      const C = Number(p.C || 0);
+      const b = Number(p.b || 0);
+      const aW = Number(p.a_w || 0);
+      const oversR = Math.max(0, Number(oversRem));
+      const wicketsLost = Math.max(0, 10 - Number(wicketsRem));
+      return C * (1 - Math.exp(-b * oversR)) * Math.exp(-aW * Math.pow(wicketsLost, model.wicketGamma));
+    }
+
+    function rawResourceFactorClient(oversRem, wicketsRem, oversCompleted) {
+      const model = getResourceModelParams();
+      const oc = Number(oversCompleted);
+      const d = model.phaseBlendOvers || 1.0;
+      for (let i = 0; i < ODI_PHASE_BOUNDARIES.length; i++) {
+        const boundary = ODI_PHASE_BOUNDARIES[i];
+        if (oc > boundary - d && oc < boundary + d) {
+          const t = (oc - (boundary - d)) / (2 * d);
+          const left = resourceForPhaseClient(i, oversRem, wicketsRem, model);
+          const right = resourceForPhaseClient(i + 1, oversRem, wicketsRem, model);
+          return (1 - t) * left + t * right;
+        }
+      }
+      return resourceForPhaseClient(odiPhase(oc), oversRem, wicketsRem, model);
+    }
+
+    function resourceFactorClient(oversRem, wicketsRem, oversCompleted) {
+      const completedBalls = Math.min(300, Math.max(0, Math.ceil(Number(oversCompleted) * 6 - 1e-9)));
+      let resource = Infinity;
+      for (let ball = 0; ball <= completedBalls; ball++) {
+        const completed = ball / 6;
+        resource = Math.min(resource, rawResourceFactorClient(50 - completed, wicketsRem, completed));
+      }
+      return resource;
+    }
+
+    function predictScoreClient(currentScore, runRate, oversRem, wicketsLost, oversCompleted) {
+      const wicketsRem = 10 - wicketsLost;
+      const rrEff = effectiveRunRateClient(runRate, oversCompleted);
+      const resource = resourceFactorClient(oversRem, wicketsRem, oversCompleted);
+      return currentScore + rrEff * resource;
+    }
+
+    function resourcePercent(oversRem, wicketsRem, Z0, a, maxOvers, maxWickets) {
+      const oc = maxOvers - oversRem;
+      const resource = resourceFactorClient(oversRem, wicketsRem, oc);
+      const baseline = resourceFactorClient(maxOvers, maxWickets, 0);
+      return baseline > 0 ? (100 * resource) / baseline : 0;
+    }
+
+    function errorClass(err) {
+      if (err < 15) return 'error-low';
+      if (err <= 35) return 'error-mid';
+      return 'error-high';
+    }
+
+    function applyKeypadParams() {
+      if (!lastRawResults.length || !lastModelParams) return;
+      for (let i = 0; i < ODI_PHASE_COUNT; i++) {
+        const { Z0, a } = getPhaseParams(i);
+        const elZ = document.getElementById('keypad-z0-' + i);
+        const elA = document.getElementById('keypad-a-' + i);
+        if (elZ) elZ.textContent = Z0.toFixed(4);
+        if (elA) elA.textContent = a.toFixed(4);
+        const btnZm = document.getElementById('keypad-z0-minus-' + i);
+        const btnZp = document.getElementById('keypad-z0-plus-' + i);
+        const btnAm = document.getElementById('keypad-a-minus-' + i);
+        const btnAp = document.getElementById('keypad-a-plus-' + i);
+        if (btnZm) btnZm.disabled = Z0 <= Z0_MIN;
+        if (btnZp) btnZp.disabled = Z0 >= Z0_MAX;
+        if (btnAm) btnAm.disabled = a <= A_MIN;
+        if (btnAp) btnAp.disabled = a >= A_MAX;
+      }
+      const results = lastRawResults.map(r => {
+        const oc = r.at_over != null ? r.at_over : r.overs_completed;
+        const pred = predictScoreClient(
+          r.current_score,
+          r.run_rate,
+          r.overs_remaining,
+          r.wickets_lost,
+          oc,
+        );
+        const err = Math.abs(pred - r.actual);
+        return { ...r, predicted: Math.round(pred * 10) / 10, error: Math.round(err * 10) / 10 };
+      });
+      const errors = results.map(r => r.error);
+      const mae = errors.length ? (errors.reduce((s, e) => s + e, 0) / errors.length).toFixed(2) : '—';
+      const rmse = errors.length ? Math.sqrt(errors.reduce((s, e) => s + e * e, 0) / errors.length).toFixed(2) : '—';
+      const maeEl = document.getElementById('simulated-mae');
+      const rmseEl = document.getElementById('simulated-rmse');
+      if (maeEl) maeEl.textContent = 'Simulated MAE: ' + mae + ' runs';
+      if (rmseEl) rmseEl.textContent = 'Simulated RMSE: ' + rmse + ' runs';
+      drawCharts(results, lastModelParams);
+      if (typeof updateLivePrediction === 'function') updateLivePrediction();
+    }
+
+    function drawCharts(results, modelParams) {
+      const chartsEl = document.getElementById('recent-charts');
+      const hasResults = results && results.length > 0;
+      if ((!hasResults && !modelParams) || typeof Chart === 'undefined') {
+        chartsEl.style.display = 'none';
+        return;
+      }
+      chartsEl.style.display = 'grid';
+
+      const c = chartColors();
+      const actuals = (results || []).map(r => r.actual);
+      const predicted = (results || []).map(r => r.predicted);
+      const errors = (results || []).map(r => r.error);
+
+      const minVal = actuals.length ? Math.min(...actuals, ...predicted) : 50;
+      const maxVal = actuals.length ? Math.max(...actuals, ...predicted) : 450;
+      const lineMin = Math.floor(minVal / 20) * 20;
+      const lineMax = Math.ceil(maxVal / 20) * 20;
+      const perfectLine = [{ x: lineMin, y: lineMin }, { x: lineMax, y: lineMax }];
+
+      if (chartPredActual) chartPredActual.destroy();
+      if (hasResults) {
+        chartPredActual = new Chart(document.getElementById('chart-pred-actual'), {
+          type: 'scatter',
+          data: {
+            datasets: [
+              {
+                type: 'scatter',
+                label: 'Predictions',
+                data: actuals.map((a, i) => ({ x: a, y: predicted[i] })),
+                backgroundColor: getTheme() === 'dark' ? 'rgba(250,250,250,0.4)' : 'rgba(10,10,10,0.3)',
+                borderColor: c.accent,
+                borderWidth: 1,
+                pointRadius: 4,
+              },
+              {
+                type: 'line',
+                label: 'Perfect (y = x)',
+                data: perfectLine,
+                borderColor: c.red,
+                borderWidth: 1.5,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                fill: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                type: 'linear',
+                title: { display: true, text: 'Actual final score', color: c.text, font: { family: 'Sora', size: 11 } },
+                min: lineMin, max: lineMax,
+                grid: { color: c.grid },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 } },
+              },
+              y: {
+                type: 'linear',
+                title: { display: true, text: 'Predicted final score', color: c.text, font: { family: 'Sora', size: 11 } },
+                min: lineMin, max: lineMax,
+                grid: { color: c.grid },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 } },
+              },
+            },
+            plugins: { legend: { labels: { color: c.text, font: { family: 'Sora', size: 11 } } } },
+          },
+        });
+      }
+
+      const bins = [0, 10, 20, 30, 40, 50, 75, 120];
+      const counts = bins.slice(0, -1).map((_, i) => {
+        const lo = bins[i]; const hi = bins[i + 1];
+        return errors.filter(e => e >= lo && e < hi).length;
+      });
+      const labels = bins.slice(0, -1).map((_, i) => bins[i] + '–' + bins[i + 1]);
+
+      if (chartErrorDist) chartErrorDist.destroy();
+      if (hasResults) {
+        chartErrorDist = new Chart(document.getElementById('chart-error-dist'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Number of predictions',
+              data: counts,
+              backgroundColor: getTheme() === 'dark' ? 'rgba(250,250,250,0.15)' : 'rgba(10,10,10,0.12)',
+              borderColor: c.accent,
+              borderWidth: 1.5,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                title: { display: true, text: 'Absolute error (runs)', color: c.text, font: { family: 'Sora', size: 11 } },
+                grid: { display: false },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 } },
+              },
+              y: {
+                title: { display: true, text: 'Count', color: c.text, font: { family: 'Sora', size: 11 } },
+                grid: { color: c.grid },
+                ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 }, beginAtZero: true },
+              },
+            },
+            plugins: { legend: { display: false } },
+          },
+        });
+      }
+
+      const maxOvers = 50;
+      const maxWickets = 10;
+      const oversRange = [];
+      for (let o = maxOvers; o >= 1; o -= 1) oversRange.push(o);
+      const wicketsToShow = [10, 8, 6, 4, 2];
+      const colors = [c.accent, c.green, c.amber, c.red, c.purple];
+      const datasets = wicketsToShow.map((wRem, i) => ({
+        type: 'line',
+        label: wRem + ' wkts left',
+        data: oversRange.map(or => {
+          const oc = maxOvers - or;
+          const z0a = getPhaseParams(odiPhase(oc));
+          return { x: or, y: resourcePercent(or, wRem, z0a.Z0, z0a.a, maxOvers, maxWickets) };
+        }),
+        borderColor: colors[i],
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.15,
+      }));
+      if (chartResourceCurve) chartResourceCurve.destroy();
+      chartResourceCurve = new Chart(document.getElementById('chart-resource-curve'), {
+        type: 'line',
+        data: { datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              type: 'linear',
+              reverse: true,
+              title: { display: true, text: 'Overs remaining', color: c.text, font: { family: 'Sora', size: 11 } },
+              min: 1, max: maxOvers,
+              grid: { color: c.grid },
+              ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 }, stepSize: 5 },
+            },
+            y: {
+              type: 'linear',
+              title: { display: true, text: 'Resource %', color: c.text, font: { family: 'Sora', size: 11 } },
+              min: 0, max: 100,
+              grid: { color: c.grid },
+              ticks: { color: c.text, font: { family: 'IBM Plex Mono', size: 10 } },
+            },
+          },
+          plugins: {
+            legend: { labels: { color: c.text, font: { family: 'Sora', size: 11 } } },
+            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%' } },
+          },
+        },
+      });
+    }
+
+    function renderRecent(data) {
+      const loading = document.getElementById('recent-loading');
+      if (loading) loading.textContent = '';
+      const summary = data.summary || {};
+      const wrap = document.getElementById('recent-summary');
+      wrap.innerHTML = '';
+      if (summary.count > 0) {
+        wrap.innerHTML = [
+          `<div class="stat"><span class="stat-label">Predictions</span><span class="stat-value">${summary.count}</span></div>`,
+          `<div class="stat"><span class="stat-label">MAE</span><span class="stat-value">${summary.mae} runs</span></div>`,
+          summary.rmse != null ? `<div class="stat"><span class="stat-label">RMSE</span><span class="stat-value">${summary.rmse} runs</span></div>` : '',
+        ].join('');
+      } else if (summary.message) {
+        wrap.innerHTML = `<p class="empty">${summary.message}</p>`;
+      }
+      const results = data.results || [];
+      lastRawResults = results;
+      lastModelParams = data.model_params || null;
+      refreshRRShrinkNote();
+      keypadZ0 = [null, null, null, null, null];
+      keypadA = [null, null, null, null, null];
+      drawCharts(results, data.model_params);
+      const tableWrap = document.getElementById('recent-table-wrap');
+      if (results.length === 0) {
+        tableWrap.innerHTML = '<p class="empty">No recent ODI match data in this range.</p>';
+        return;
+      }
+      const headers = ['Date', 'Match', 'Innings', 'At over', 'Current', 'RR', 'Wkt', 'Predicted', 'Actual', 'Error'];
+      let html = '<table><thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+      results.forEach(r => {
+        const matchName = (r.teams && r.teams.length >= 2) ? `${r.teams[0]} v ${r.teams[1]}` : (r.innings_team || '–');
+        html += '<tr>' + [
+          r.date || '–',
+          matchName,
+          r.innings_team || '–',
+          r.at_over,
+          r.current_score,
+          r.run_rate,
+          r.wickets_lost,
+          '<span class="num">' + r.predicted + '</span>',
+          '<span class="num">' + r.actual + '</span>',
+          '<span class="num ' + errorClass(r.error) + '">' + r.error + '</span>',
+        ].map(c => `<td>${c}</td>`).join('') + '</tr>';
+      });
+      html += '</tbody></table>';
+      tableWrap.innerHTML = html;
+    }
+
+    /* ── ODI TEAMS DICTIONARY (LOGOS & ABBREVIATIONS) ──── */
+    const ODI_TEAM_LOGOS = {
+      'India': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313128.logo.png',
+      'Australia': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313125.logo.png',
+      'England': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313114.logo.png',
+      'South Africa': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313127.logo.png',
+      'New Zealand': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/340400/340493.png',
+      'Pakistan': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313129.logo.png',
+      'Sri Lanka': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313130.logo.png',
+      'Bangladesh': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313126.logo.png',
+      'Afghanistan': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313131.logo.png',
+      'West Indies': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/317100/317128.png',
+      'Netherlands': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313136.logo.png',
+      'Ireland': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313135.logo.png',
+      'Zimbabwe': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313132.logo.png',
+      'Scotland': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313133.logo.png',
+      'Nepal': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313134.logo.png',
+      'United States of America': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313137.logo.png',
+      'United States': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313137.logo.png',
+      'USA': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313137.logo.png',
+    };
+
+    const ODI_TEAM_ABBR = {
+      'India': 'IND', 'Australia': 'AUS', 'England': 'ENG', 'South Africa': 'SA',
+      'New Zealand': 'NZ', 'Pakistan': 'PAK', 'Sri Lanka': 'SL', 'Bangladesh': 'BAN',
+      'Afghanistan': 'AFG', 'West Indies': 'WI', 'Netherlands': 'NED', 'Ireland': 'IRE',
+      'Zimbabwe': 'ZIM', 'Scotland': 'SCO', 'Nepal': 'NEP', 'Oman': 'OMA',
+      'United Arab Emirates': 'UAE', 'Namibia': 'NAM', 'Canada': 'CAN',
+      'United States of America': 'USA', 'United States': 'USA', 'USA': 'USA',
+      'Papua New Guinea': 'PNG',
+    };
+
+    /* ── MONTE CARLO WIN PROBABILITY (ODI 50-OVER) ────────── */
+    var _winprobModel = null;
+    var _winprobModelPromise = null;
+
+    function loadWinprobModel() {
+      if (_winprobModel) return Promise.resolve(_winprobModel);
+      if (_winprobModelPromise) return _winprobModelPromise;
+      _winprobModelPromise = fetch('/data/odi_winprob_sim_model.json')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(m) { _winprobModel = m; return m; })
+        .catch(function() { return null; });
+      return _winprobModelPromise;
+    }
+
+    var OUTCOMES = ['W', '0', '1', '2', '3', '4', '6'];
+
+    function _rrrBucketODI(rrr) {
+      if (rrr < 4) return 'lt4';
+      if (rrr < 5) return '4_5';
+      if (rrr < 6) return '5_6';
+      if (rrr < 7) return '6_7';
+      return 'ge7';
+    }
+
+    function _ballsBucketODI(br) {
+      if (br > 240) return '241_300';
+      if (br > 180) return '181_240';
+      if (br > 120) return '121_180';
+      if (br > 60) return '61_120';
+      return '1_60';
+    }
+
+    function _phaseFromBallODI(ball) {
+      var over = Math.floor((ball - 1) / 6);
+      if (over < 10) return 'pp';
+      if (over < 40) return 'mid';
+      return 'death';
+    }
+
+    function _oversToBalls(oversInput) {
+      var s = String(oversInput || '0').trim().split('.');
+      var ov = parseInt(s[0] || '0') || 0;
+      var b = parseInt(s[1] || '0') || 0;
+      return ov * 6 + Math.min(Math.max(b, 0), 5);
+    }
+
+    function oversToDecimal(oversInput) {
+      var s = String(oversInput || '0').trim().split('.');
+      var ov = parseInt(s[0] || '0') || 0;
+      var b = parseInt(s[1] || '0') || 0;
+      return ov + Math.min(Math.max(b, 0), 5) / 6;
+    }
+
+    function _weightedSample(probMap) {
+      var u = Math.random(), c = 0;
+      for (var i = 0; i < OUTCOMES.length; i++) {
+        c += Number(probMap[OUTCOMES[i]] || 0);
+        if (u <= c) return OUTCOMES[i];
+      }
+      return '0';
+    }
+
+    function _simulateOnceODI(model, runs, wickets, target, legalBalls) {
+      var r = runs, w = wickets, b = legalBalls;
+      while (b < 300 && w < 10 && r < target) {
+        var br = 300 - b;
+        var rn = Math.max(0, target - r);
+        var rrr = br > 0 ? (rn / br) * 6 : 99;
+        var key = _phaseFromBallODI(b + 1) + '|' + Math.min(10, Math.max(0, w)) + '|' + _rrrBucketODI(rrr) + '|' + _ballsBucketODI(br);
+        var row = model.table[key];
+        var probs = (row && row.n >= 15) ? row.probs : model.global_probs;
+        var out = _weightedSample(probs);
+        if (out === 'W') { w++; } else { r += Number(out); }
+        b++;
+      }
+      return r >= target ? 1 : 0;
+    }
+
+    var simWinProbCache = {};
+    function getSimWinProbODI(runs, wickets, overs, target) {
+      var key = [runs, wickets, overs, target].join('|');
+      if (simWinProbCache[key] !== undefined) return Promise.resolve(simWinProbCache[key]);
+      return loadWinprobModel().then(function(model) {
+        if (!model) return null;
+        if (target <= 0) return null;
+        var legalBalls = _oversToBalls(overs);
+        var ballsRemaining = Math.max(0, 300 - legalBalls);
+        var runsNeeded = Math.max(0, target - runs);
+        if (runsNeeded <= 0) { simWinProbCache[key] = 1; return 1; }
+        if (ballsRemaining <= 0 || wickets >= 10) { simWinProbCache[key] = 0; return 0; }
+        var wins = 0, sims = 2500;
+        for (var i = 0; i < sims; i++) wins += _simulateOnceODI(model, runs, wickets, target, legalBalls);
+        var p = wins / sims;
+        simWinProbCache[key] = p;
+        return p;
+      });
+    }
+
+    /* ── INNINGS 1 ODI PROJECTION ────────────────────────── */
+    var _modelParams = null;
+    var _modelParamsPromise = null;
+
+    function loadModelParams() {
+      if (_modelParams) return Promise.resolve(_modelParams);
+      if (_modelParamsPromise) return _modelParamsPromise;
+      _modelParamsPromise = fetch('/data/odi_model_params.json')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(m) { _modelParams = m; return m; })
+        .catch(function() { return null; });
+      return _modelParamsPromise;
+    }
+
+    var inn1PredCharts = {};
+    function renderInn1PredChart(canvasId, inn1Balls, actualFinal, abbr1, dark) {
+      var canvas = document.getElementById(canvasId);
+      if (!canvas || typeof Chart === 'undefined') return;
+      var c = chartColors();
+      var accentColor = dark ? '#60a5fa' : '#2563eb';
+      var refColor    = dark ? 'rgba(250,250,250,0.35)' : 'rgba(10,10,10,0.25)';
+
+      loadModelParams().then(function(mp) {
+        if (!mp) return;
+        var data = [];
+        var wicketPoints = [];
+        var prevWickets = 0;
+        inn1Balls.forEach(function(b) {
+          var parts = String(b.over || '0').split('.');
+          var ovInt  = parseInt(parts[0]) || 0;
+          var ballN  = parseInt(parts[1]) || 0;
+          var oversCompleted = ovInt + ballN / 6;
+          if (oversCompleted < 1 || oversCompleted > 49.9) { prevWickets = b.wickets; return; }
+          var oversRem = Math.max(0, 50 - oversCompleted);
+          var rr = oversCompleted > 0 ? b.runs / oversCompleted : 0;
+          var pred = Math.round(predictScoreClient(b.runs, rr, oversRem, b.wickets, oversCompleted));
+          data.push({ x: parseFloat(b.over), y: pred });
+          if (b.wickets > prevWickets) {
+            wicketPoints.push({ x: parseFloat(b.over), y: pred, wktNum: b.wickets });
+          }
+          prevWickets = b.wickets;
+        });
+        if (!data.length) return;
+
+        var wicketColor = dark ? '#f87171' : '#dc2626';
+        var datasets = [
+          {
+            label: abbr1 + ' predicted',
+            data: data,
+            borderColor: accentColor,
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            tension: 0.3,
+            parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+          },
+          {
+            label: 'Wickets',
+            data: wicketPoints,
+            type: 'scatter',
+            borderColor: wicketColor,
+            backgroundColor: wicketColor,
+            pointStyle: 'triangle',
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+          },
+        ];
+
+        if (actualFinal != null) {
+          datasets.push({
+            label: 'Actual: ' + actualFinal,
+            data: [{ x: 0, y: actualFinal }, { x: 50, y: actualFinal }],
+            borderColor: refColor,
+            backgroundColor: 'transparent',
+            borderWidth: 1,
+            borderDash: [4, 3],
+            pointRadius: 0,
+            tension: 0,
+            parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+          });
+        }
+
+        if (inn1PredCharts[canvasId]) {
+          try { inn1PredCharts[canvasId].destroy(); } catch(_) {}
+        }
+
+        var ys = data.map(p => p.y);
+        if (actualFinal != null) ys.push(actualFinal);
+        var yMin = Math.max(0, Math.floor((Math.min(...ys) - 30) / 20) * 20);
+        var yMax = Math.ceil((Math.max(...ys) + 30) / 20) * 20;
+
+        inn1PredCharts[canvasId] = new Chart(canvas, {
+          type: 'line',
+          data: { datasets: datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+              x: {
+                type: 'linear', min: 0, max: 50,
+                grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
+                border: { display: false },
+                ticks: {
+                  color: c.text, font: { family: 'IBM Plex Mono', size: 8 },
+                  maxTicksLimit: 6,
+                  callback: function(v) { return [0, 10, 20, 30, 40, 50].includes(v) ? v : ''; },
+                },
+              },
+              y: {
+                min: yMin, max: yMax,
+                grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
+                border: { display: false },
+                ticks: {
+                  color: c.text, font: { family: 'IBM Plex Mono', size: 8 },
+                  maxTicksLimit: 4,
+                  callback: function(v) { return v; },
+                },
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                mode: 'index', intersect: false,
+                backgroundColor: dark ? '#1f1f1f' : '#fff',
+                borderColor: dark ? '#2a2a2a' : '#d4d4d4',
+                borderWidth: 1,
+                titleColor: c.text, bodyColor: c.text,
+                titleFont: { family: 'IBM Plex Mono', size: 9 },
+                bodyFont:  { family: 'IBM Plex Mono', size: 9 },
+                filter: function(item) { return item.datasetIndex === 0; },
+                callbacks: {
+                  title: function(items) {
+                    var x = items[0].parsed.x;
+                    var ovInt = Math.floor(x);
+                    var ball  = Math.round((x - ovInt) * 10);
+                    return ball > 0 ? 'Ov ' + ovInt + '.' + ball : 'Ov ' + ovInt;
+                  },
+                  label: function(item) {
+                    return ' Predicted: ' + item.parsed.y;
+                  },
+                },
+              },
+            },
+          },
+        });
+      });
+    }
+
+    /* ── WIN PROBABILITY CHART (50-OVER CHASE) ───────────── */
+    const liveWinProbCharts = {};
+    const liveWinProbHistory = {};
+
+    function clearLiveWinProbCache() {
+      Object.keys(liveWinProbCharts).forEach(id => {
+        try { liveWinProbCharts[id].destroy(); } catch (_) {}
+        delete liveWinProbCharts[id];
+      });
+      Object.keys(liveWinProbHistory).forEach(id => delete liveWinProbHistory[id]);
+      try { localStorage.removeItem('odi_winprob_history'); } catch (_) {}
+      loadLiveMatches();
+    }
+
+    function buildWinProbChart(canvasId, inn1, inn2, abbr1, abbr2, mode, vAvg, isComplete) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas || typeof Chart === 'undefined') return;
+      const dark = getTheme() === 'dark';
+      const c = chartColors();
+
+      if (liveWinProbCharts[canvasId]) {
+        try { liveWinProbCharts[canvasId].destroy(); } catch (_) {}
+      }
+
+      const team1Color = dark ? '#60a5fa' : '#2563eb';
+      const team2Color = dark ? '#4ade80' : '#16a34a';
+
+      const chartInstance = new Chart(canvas, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: abbr1,
+              data: [],
+              borderColor: team1Color,
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              tension: 0.25,
+            },
+            {
+              label: abbr2,
+              data: [],
+              borderColor: team2Color,
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              tension: 0.25,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              type: 'linear',
+              min: 0,
+              max: 50,
+              grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
+              border: { display: false },
+              ticks: {
+                color: c.text,
+                font: { family: 'IBM Plex Mono', size: 8 },
+                maxTicksLimit: 6,
+                callback: function(v) { return [0, 10, 20, 30, 40, 50].includes(v) ? v : ''; },
+              },
+            },
+            y: {
+              min: 0,
+              max: 100,
+              grid: { color: dark ? 'rgba(42,42,42,0.5)' : 'rgba(212,212,212,0.5)', drawTicks: false },
+              border: { display: false },
+              ticks: {
+                color: c.text,
+                font: { family: 'IBM Plex Mono', size: 8 },
+                maxTicksLimit: 3,
+                callback: function(v) { return v === 0 ? '0%' : v === 50 ? '50%' : v === 100 ? '100%' : ''; },
+              },
+            },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+              backgroundColor: dark ? '#1f1f1f' : '#fff',
+              borderColor: dark ? '#2a2a2a' : '#d4d4d4',
+              borderWidth: 1,
+              titleColor: c.text,
+              bodyColor: c.text,
+              titleFont: { family: 'IBM Plex Mono', size: 9 },
+              bodyFont: { family: 'IBM Plex Mono', size: 9 },
+              callbacks: {
+                title: function(items) {
+                  const x = items[0].parsed.x;
+                  const ovInt = Math.floor(x);
+                  const balls = Math.round((x - ovInt) * 10);
+                  return balls > 0 ? 'Ov ' + ovInt + '.' + balls : 'Ov ' + ovInt;
+                },
+                label: function(item) {
+                  return ' ' + item.dataset.label + ': ' + item.parsed.y + '%';
+                },
+              },
+            },
+          },
+        },
+      });
+      liveWinProbCharts[canvasId] = chartInstance;
+    }
+
+    async function updateChartFromBalls(canvasId, balls, inn1, inn2, abbr1, abbr2) {
+      if (!balls || !balls.length) return;
+      const target = inn1 ? inn1.runs + 1 : null;
+
+      if (!liveWinProbHistory[canvasId]) {
+        liveWinProbHistory[canvasId] = { team1: [], team2: [], lastX: -1 };
+      }
+      const hist = liveWinProbHistory[canvasId];
+      const currentInn = inn2 || inn1;
+      let currentOver = currentInn ? oversToDecimal(currentInn.overs || '0') : 50;
+
+      var appended = false;
+      for (const b of balls) {
+        if (b.innings !== 2) continue;
+        var ballOver = b.over;
+        if (ballOver > currentOver + 0.1) continue;
+        var x = parseFloat(b.over.toFixed(4));
+        if (x <= hist.lastX) continue;
+
+        var p1, p2;
+        if (b.innings === 2 && target != null) {
+          var p2val = await getSimWinProbODI(b.runs, b.wickets, b.over, target);
+          if (p2val == null) continue;
+          p2 = Math.round(p2val * 100);
+          p1 = 100 - p2;
+        } else {
+          continue;
+        }
+
+        hist.team1.push({ x: x, y: p1 });
+        hist.team2.push({ x: x, y: p2 });
+        hist.lastX = x;
+        appended = true;
+      }
+
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+
+      const existingChart = liveWinProbCharts[canvasId];
+      if (existingChart && existingChart.canvas === canvas) {
+        existingChart.data.datasets[0].data = hist.team1.slice();
+        existingChart.data.datasets[1].data = hist.team2.slice();
+        existingChart.update('none');
+      } else {
+        const lastBall = balls[balls.length - 1];
+        const fakeInn1 = inn1 || { runs: lastBall.runs, wickets: lastBall.wickets, overs: String(lastBall.over) };
+        buildWinProbChart(canvasId, fakeInn1, inn2, abbr1, abbr2, 'live', 260, false);
+        const chart = liveWinProbCharts[canvasId];
+        if (chart) {
+          chart.data.datasets[0].data = hist.team1.slice();
+          chart.data.datasets[1].data = hist.team2.slice();
+          chart.update('none');
+        }
+      }
+    }
+
+    /* ── LIVE MATCH RENDERING ────────────────────────────── */
+    function renderLiveMatches(data) {
+      const loading = document.getElementById('live-matches-loading');
+      const wrap = document.getElementById('live-match-list');
+      if (loading) loading.textContent = '';
+      const matches = (data && data.matches) || [];
+
+      if (!matches.length) {
+        wrap.innerHTML = '<div class="live-match-empty">No live men\'s ODI matches in progress right now. Live matches will appear here with real-time win probability and score projections.</div>';
+        return;
+      }
+
+      function logoHtml(team) {
+        const logo = ODI_TEAM_LOGOS[team] || '';
+        const abbr = ODI_TEAM_ABBR[team] || team.slice(0, 3).toUpperCase();
+        if (logo) {
+          return '<img src="' + logo + '" alt="' + team + '" class="team-logo" loading="lazy" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';">' +
+                 '<div class="team-logo-fallback" style="display:none;">' + abbr + '</div>';
+        }
+        return '<div class="team-logo-fallback">' + abbr + '</div>';
+      }
+
+      function fmtScore(inn) {
+        if (!inn || inn.runs == null) return null;
+        var s = String(inn.runs);
+        if (inn.wickets != null && inn.wickets < 10) s += '/' + inn.wickets;
+        return s;
+      }
+
+      function teamRowHtml(team, inn, isBatting, status) {
+        const abbr = ODI_TEAM_ABBR[team] || team.split(' ').map(w => w[0]).join('');
+        const score = fmtScore(inn);
+        let scoreHtml;
+        if (score != null) {
+          scoreHtml =
+            '<div class="team-score' + (isBatting ? ' batting' : '') + '">' + score + '</div>' +
+            (inn.overs ? '<div class="team-overs">' + inn.overs + ' ov</div>' : '');
+        } else {
+          scoreHtml = '<div class="team-score not-batting">' + (status === 'upcoming' ? '—' : 'Yet to bat') + '</div>';
+        }
+        return (
+          '<div class="team-row">' +
+            '<div class="team-logo-wrap">' + logoHtml(team) + '</div>' +
+            '<div class="team-info">' +
+              '<div class="team-name">' + team + '</div>' +
+              '<div class="team-name-abbr">' + abbr + '</div>' +
+            '</div>' +
+            '<div class="team-score-wrap">' + scoreHtml + '</div>' +
+          '</div>'
+        );
+      }
+
+      wrap.innerHTML = matches.map(function(m) {
+        const teams = m.teams || [];
+        const team1 = teams[0] || 'Team 1';
+        const team2 = teams[1] || 'Team 2';
+        const status = m.status || 'unknown';
+        const inn1 = m.innings1 || null;
+        const inn2 = m.innings2 || null;
+
+        const statusClass = status.toLowerCase();
+        const statusText = status === 'live' ? 'Live' : status === 'completed' ? 'Final' : 'Upcoming';
+
+        const bat1Team = inn1 ? inn1.team : team1;
+        const bat2Team = inn2 ? inn2.team : (bat1Team === team1 ? team2 : team1);
+
+        const row1Html = teamRowHtml(bat1Team, inn1, false, status);
+        const row2Html = teamRowHtml(bat2Team, inn2, status === 'live' && inn2 != null, status);
+
+        const resultText = m.result || '';
+        const isWin = /won by| won/i.test(resultText);
+        let statusLine = isWin ? resultText
+          : status === 'live' ? 'In progress'
+          : status === 'upcoming' ? 'Match not started'
+          : resultText || '';
+
+        if (status === 'live' && inn1 && inn1.runs != null && inn2 && inn2.runs != null) {
+          const target = inn1.runs + 1;
+          const runsNeeded = Math.max(0, target - inn2.runs);
+          const legalBalls = _oversToBalls(inn2.overs);
+          const ballsRemaining = Math.max(0, 300 - legalBalls);
+          statusLine += ' — ' + runsNeeded + ' off ' + ballsRemaining + ' balls';
+        }
+
+        const predInn = inn2 || inn1;
+        const canPredict = predInn && predInn.runs != null && predInn.overs != null;
+        const predRuns = predInn ? (predInn.runs != null ? predInn.runs : '') : '';
+        const predWkts = predInn ? (predInn.wickets != null ? predInn.wickets : '') : '';
+        const predOvers = predInn ? (predInn.overs || '') : '';
+
+        const canChart = (status === 'live' || status === 'completed') && inn1 && inn1.runs != null && m.matchId && m.slug;
+        const chartId = 'wp-' + (m.matchId || Math.random().toString(36).slice(2));
+
+        return (
+          '<article class="live-match-card">' +
+            '<div class="live-card-topbar">' +
+              '<span class="live-card-series">' + (m.series || 'ODI') + '</span>' +
+              '<span class="live-match-badge ' + statusClass + '">' + statusText + '</span>' +
+            '</div>' +
+            '<div class="live-card-body">' +
+              row1Html +
+              '<div class="team-row-divider"></div>' +
+              row2Html +
+              (statusLine ? '<div class="live-card-result' + (isWin ? ' result-win' : '') + '">' + statusLine + '</div>' : '') +
+              (canChart
+                ? (
+                  '<div class="win-prob-chart-wrap">' +
+                  (inn2 && inn2.runs != null
+                    ? (
+                      '<div class="win-prob-chart-title"><span class="win-prob-chart-label">Simulator Win Probability (Chase)</span></div>' +
+                      '<div class="win-prob-canvas-wrap"><canvas id="' + chartId + '"></canvas></div>'
+                    )
+                    : (
+                      '<div class="win-prob-chart-title"><span class="win-prob-chart-label">Inn 1 \u00b7 Projected Total (50 Overs)</span></div>' +
+                      '<div class="win-prob-canvas-wrap"><canvas id="inn1-' + chartId + '"></canvas></div>'
+                    )
+                  ) +
+                  '</div>'
+                )
+                : '') +
+            '</div>' +
+            '<div class="live-card-footer">' +
+              '<button class="live-match-btn"' +
+                ' data-runs="' + predRuns + '"' +
+                ' data-wickets="' + predWkts + '"' +
+                ' data-overs="' + predOvers + '"' +
+                ' data-match-id="' + (m.matchId || '') + '"' +
+                ' data-match-slug="' + (m.slug || '') + '"' +
+                ' data-chart-id="' + chartId + '"' +
+                ' data-team1-abbr="' + (ODI_TEAM_ABBR[team1] || team1) + '"' +
+                ' data-team2-abbr="' + (ODI_TEAM_ABBR[team2] || team2) + '"' +
+                (canPredict ? '' : ' disabled') + '>' +
+                (canPredict ? '↑ Load into predictor' : 'No score data yet') +
+              '</button>' +
+            '</div>' +
+          '</article>'
+        );
+      }).join('');
+
+      matches.forEach(function(m) {
+        const status = m.status || 'unknown';
+        if (!(status === 'live' || status === 'completed')) return;
+        if (!m.matchId || !m.slug || !m.innings1 || m.innings1.runs == null) return;
+
+        const inn2Started = m.innings2 && m.innings2.runs != null;
+        const chartId     = 'wp-' + m.matchId;
+        const inn1ChartId = 'inn1-wp-' + m.matchId;
+        const team1 = (m.teams || [])[0] || 'Team 1';
+        const team2 = (m.teams || [])[1] || 'Team 2';
+        const abbr1 = ODI_TEAM_ABBR[team1] || team1;
+        const abbr2 = ODI_TEAM_ABBR[team2] || team2;
+        const dark  = getTheme() === 'dark';
+
+        const url = '/api/odi-scorecard?matchId=' + encodeURIComponent(m.matchId) +
+                    '&slug=' + encodeURIComponent(m.slug) +
+                    '&teams=' + encodeURIComponent(JSON.stringify(m.teams || []));
+
+        fetch(url)
+          .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function(d) {
+            const balls = d.balls || [];
+            if (inn2Started) {
+              return updateChartFromBalls(chartId, balls, m.innings1, m.innings2, abbr1, abbr2);
+            } else {
+              const inn1Balls  = balls.filter(b => b.innings === 1);
+              const actualFinal = m.innings1.runs != null ? m.innings1.runs : null;
+              renderInn1PredChart(inn1ChartId, inn1Balls, actualFinal, abbr1, dark);
+            }
+          })
+          .catch(function() {});
+      });
+    }
+
+    /* ── LIVE DATA REFRESH & TIMING ──────────────────────── */
+    let liveLastFetched = null;
+    let liveRefreshTimer = null;
+    let liveAgeTimer = null;
+
+    function formatAge(ms) {
+      const s = Math.floor(ms / 1000);
+      if (s < 5)  return 'just now';
+      if (s < 60) return s + 's ago';
+      const m = Math.floor(s / 60);
+      return m + 'm ' + (s % 60) + 's ago';
+    }
+
+    function tickLiveAge() {
+      const el = document.getElementById('live-updated');
+      if (!el) return;
+      if (!liveLastFetched) { el.textContent = ''; return; }
+      el.textContent = 'Updated ' + formatAge(Date.now() - liveLastFetched);
+    }
+
+    function loadLiveMatches() {
+      const loading = document.getElementById('live-matches-loading');
+      const btn = document.getElementById('live-refresh-btn');
+      if (loading) loading.textContent = 'Loading…';
+      if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+
+      fetch('/api/odi-live?t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(data) {
+          liveLastFetched = Date.now();
+          tickLiveAge();
+          renderLiveMatches(data);
+        })
+        .catch(function () {
+          if (loading) loading.textContent = 'Could not load live ODI data.';
+          const wrap = document.getElementById('live-match-list');
+          if (wrap) wrap.innerHTML = '<div class="live-match-empty">Live data feed currently unavailable. Try refreshing in a moment.</div>';
+        })
+        .finally(function() {
+          if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+        });
+    }
+
+    document.getElementById('live-refresh-btn').addEventListener('click', function() {
+      clearInterval(liveRefreshTimer);
+      loadLiveMatches();
+      liveRefreshTimer = setInterval(loadLiveMatches, 60000);
+    });
+
+    function loadRecent() {
+      const days = document.getElementById('days-select').value || 9999;
+      const loading = document.getElementById('recent-loading');
+      if (loading) loading.textContent = 'Loading…';
+      fetch('/api/odi-recent?days=' + days + '&t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(renderRecent)
+        .catch(function () {
+          if (loading) {
+            loading.textContent =
+              'Could not load /api/odi-recent. For local dev run: python scripts/app_odi.py (port 5051).';
+          }
+        });
+    }
+
+    document.getElementById('days-select').addEventListener('change', loadRecent);
+
+    document.getElementById('live-match-list').addEventListener('click', function (e) {
+      const btn = e.target.closest('.live-match-btn');
+      if (!btn) return;
+      const runs = btn.getAttribute('data-runs');
+      const wickets = btn.getAttribute('data-wickets');
+      const overs = btn.getAttribute('data-overs');
+      if (runs != null && runs !== '') document.getElementById('live-runs').value = runs;
+      if (wickets != null && wickets !== '') document.getElementById('live-wickets').value = wickets;
+      if (overs != null && overs !== '') document.getElementById('live-overs').value = overs;
+      updateLivePrediction();
+      const pred = document.getElementById('prediction-heading');
+      if (pred && pred.scrollIntoView) pred.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    /* ── CRICKET OVERS INPUT (50 OVERS) ──────────────────── */
+    function parseCricketOversInput(str) {
+      const t = String(str).trim();
+      if (t === '') return { ok: false, reason: 'empty' };
+      const parts = t.split('.');
+      if (parts.length > 2) {
+        return { ok: false, reason: 'Use at most one decimal point' };
+      }
+      const wholeStr = parts[0];
+      let whole;
+      if (wholeStr === '') {
+        whole = 0;
+      } else {
+        whole = parseInt(wholeStr, 10);
+        if (isNaN(whole) || whole < 0 || whole > 50) {
+          return { ok: false, reason: 'Whole overs must be between 0 and 50' };
+        }
+      }
+      if (parts.length === 1) {
+        return { ok: true, oversCompleted: whole, inputDisplay: String(whole) };
+      }
+      const frac = parts[1];
+      if (frac.length === 0) {
+        return { ok: true, oversCompleted: whole, inputDisplay: String(whole) };
+      }
+      if (frac.length > 1) {
+        return { ok: false, reason: 'Only one digit after dot (balls 0–6)' };
+      }
+      const b = parseInt(frac[0], 10);
+      if (isNaN(b)) return { ok: false, reason: 'Invalid ball digit' };
+      if (b > 6) {
+        return { ok: false, reason: 'Ball digit must be 0–6 (.7–.9 not valid in cricket)' };
+      }
+      if (b === 0) {
+        return { ok: true, oversCompleted: whole, inputDisplay: String(whole) };
+      }
+      if (b === 6) {
+        const next = whole + 1;
+        if (next > 50) return { ok: false, reason: 'Cannot exceed 50 overs' };
+        return { ok: true, oversCompleted: next, inputDisplay: String(next) };
+      }
+      const oc = whole + b / 6;
+      if (oc > 50) return { ok: false, reason: 'Cannot exceed 50 overs' };
+      return { ok: true, oversCompleted: oc, inputDisplay: whole + '.' + b };
+    }
+
+    function updateLivePrediction() {
+      const effDetail = document.getElementById('live-rr-eff-detail');
+      const setEff = (t) => { if (effDetail) effDetail.textContent = t || ''; };
+
+      const hint = document.getElementById('live-overs-hint');
+      const oversEl = document.getElementById('live-overs');
+      oversEl.classList.remove('input-invalid');
+      hint.textContent = '';
+      hint.classList.remove('invalid');
+
+      const runs = parseInt(document.getElementById('live-runs').value, 10);
+      if (runs !== runs) {
+        document.getElementById('live-prediction-val').textContent = '—';
+        setEff('');
+        return;
+      }
+      const wEl = document.getElementById('live-wickets');
+      const wRaw = wEl.value.trim();
+      if (wRaw === '') {
+        document.getElementById('live-prediction-val').textContent = '—';
+        setEff('');
+        return;
+      }
+      let wickets = parseInt(wRaw, 10);
+      if (isNaN(wickets)) {
+        document.getElementById('live-prediction-val').textContent = '—';
+        setEff('');
+        return;
+      }
+      wickets = Math.min(10, Math.max(0, wickets));
+      if (String(wickets) !== wRaw) wEl.value = String(wickets);
+
+      const parsed = parseCricketOversInput(oversEl.value.trim());
+      if (!parsed.ok) {
+        document.getElementById('live-prediction-val').textContent = '—';
+        setEff('');
+        if (parsed.reason !== 'empty') {
+          hint.textContent = parsed.reason;
+          hint.classList.add('invalid');
+          oversEl.classList.add('input-invalid');
+        }
+        return;
+      }
+
+      const oversCompleted = parsed.oversCompleted;
+      if (wickets >= 10 || oversCompleted >= 50) {
+        document.getElementById('live-prediction-val').textContent = runs;
+        setEff('');
+        return;
+      }
+
+      const observedRR = oversCompleted > 0 ? runs / oversCompleted : 5.0;
+      const rrEff = effectiveRunRateClient(observedRR, oversCompleted);
+      const oversRem = Math.max(0, 50 - oversCompleted);
+      const pred = predictScoreClient(runs, observedRR, oversRem, wickets, oversCompleted);
+      document.getElementById('live-prediction-val').textContent = Math.round(pred);
+      const ph = odiPhase(oversCompleted);
+      const phLabs = ['1–10', '11–20', '21–30', '31–40', '41–50'];
+      const { alphaByPhase } = getRRShrink();
+      setEff(
+        'Observed RR ' +
+          observedRR.toFixed(2) +
+          ' → effective RR ' +
+          rrEff.toFixed(2) +
+          ' (phase ' +
+          phLabs[ph] +
+          ', α=' +
+          alphaByPhase[ph].toFixed(3) +
+          ')',
+      );
+    }
+
+    document.getElementById('live-runs').addEventListener('input', updateLivePrediction);
+    document.getElementById('live-wickets').addEventListener('input', function () {
+      let v = parseInt(this.value, 10);
+      if (!isNaN(v)) {
+        if (v > 10) this.value = '10';
+        if (v < 0) this.value = '0';
+      }
+      updateLivePrediction();
+    });
+    document.getElementById('live-overs').addEventListener('input', updateLivePrediction);
+    document.getElementById('live-overs').addEventListener('blur', function () {
+      const p = parseCricketOversInput(this.value.trim());
+      if (p.ok) this.value = p.inputDisplay;
+      updateLivePrediction();
+    });
+
+    for (let i = 0; i < ODI_PHASE_COUNT; i++) {
+      const idx = i;
+      const btnZm = document.getElementById('keypad-z0-minus-' + idx);
+      const btnZp = document.getElementById('keypad-z0-plus-' + idx);
+      const btnAm = document.getElementById('keypad-a-minus-' + idx);
+      const btnAp = document.getElementById('keypad-a-plus-' + idx);
+      if (btnZm) btnZm.addEventListener('click', function() {
+        const { Z0 } = getPhaseParams(idx);
+        keypadZ0[idx] = Math.max(Z0_MIN, Z0 - Z0_STEP);
+        applyKeypadParams();
+      });
+      if (btnZp) btnZp.addEventListener('click', function() {
+        const { Z0 } = getPhaseParams(idx);
+        keypadZ0[idx] = Math.min(Z0_MAX, Z0 + Z0_STEP);
+        applyKeypadParams();
+      });
+      if (btnAm) btnAm.addEventListener('click', function() {
+        const { a } = getPhaseParams(idx);
+        keypadA[idx] = Math.max(A_MIN, a - A_STEP);
+        applyKeypadParams();
+      });
+      if (btnAp) btnAp.addEventListener('click', function() {
+        const { a } = getPhaseParams(idx);
+        keypadA[idx] = Math.min(A_MAX, a + A_STEP);
+        applyKeypadParams();
+      });
+    }
+
+    const resetBtn = document.getElementById('keypad-reset');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function() {
+        keypadZ0 = [null, null, null, null, null];
+        keypadA = [null, null, null, null, null];
+        applyKeypadParams();
+      });
+    }
+
+    refreshRRShrinkNote();
+    updateLivePrediction();
+    loadRecent();
+    loadLiveMatches();
+    liveRefreshTimer = setInterval(loadLiveMatches, 60000);
+    liveAgeTimer = setInterval(tickLiveAge, 5000);
+  </script>
+</body>
+</html>

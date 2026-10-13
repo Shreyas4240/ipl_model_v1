@@ -10,6 +10,7 @@ scripts/__pycache__/
 # models/*.pkl
 # models/*.png
 ipl_male_json_small/
+odis_json/
 data/winprob_test_raw.csv
 data/winprob_training_raw.csv
 .env*.local

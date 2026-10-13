@@ -8,15 +8,23 @@ import urllib.request
 from flask import Flask, jsonify, send_from_directory
 
 from ipl_service import get_recent_results, get_upcoming_fixtures
+from odi_service import get_recent_results as get_odi_recent_results
+from odi_service import get_upcoming_fixtures as get_odi_upcoming_fixtures
 
-app = Flask(__name__, static_folder="static", static_url_path="")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+app = Flask(__name__, static_folder=PROJECT_ROOT, static_url_path="")
 
-# Run from project root so ipl_innings_snapshots.csv and ipl_male_json resolve
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+# Run from project root so the IPL data files resolve in both local routes.
 
 @app.route("/")
+@app.route("/index.html")
 def index():
     return send_from_directory(PROJECT_ROOT, "index.html")
+
+
+@app.route("/odi.html")
+def odi_index():
+    return send_from_directory(PROJECT_ROOT, "odi.html")
 
 @app.route("/api/recent")
 def api_recent():
@@ -32,6 +40,27 @@ def api_recent():
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e), "results": [], "summary": {"count": 0, "mae": 0}}), 500
+
+
+@app.route("/api/odi-recent")
+def api_odi_recent():
+    from flask import request
+    try:
+        days = request.args.get("days", 30, type=int)
+        days = max(1, min(9999, days))
+        data = get_odi_recent_results(past_days=days)
+        data["summary"]["days_requested"] = days
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e), "results": [], "summary": {"count": 0, "mae": 0}}), 500
+
+
+@app.route("/api/odi-upcoming")
+def api_odi_upcoming():
+    try:
+        return jsonify({"fixtures": get_odi_upcoming_fixtures()})
+    except Exception as e:
+        return jsonify({"error": str(e), "fixtures": []}), 500
 
 @app.route("/api/live")
 def api_live():

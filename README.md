@@ -1,10 +1,11 @@
-# IPL Score Prediction & Win Probability Model
+# Cricket Score Prediction & Win Probability Models (IPL & ODI)
 
-A live IPL match dashboard with two independent predictive models:
-1. **Resource Model** — predicts final innings scores from mid-innings snapshots
-2. **Monte Carlo Win Probability Simulator** — computes ball-by-ball chase win probability using historical transition tables
+A live cricket analytics dashboard featuring two independent formats (IPL 20-Over and ODI 50-Over), each powered by:
+1. **Resource Model** — predicts final innings scores from mid-innings snapshots with phase-aware run-rate shrinkage
+2. **Monte Carlo Win Probability Simulator** — computes ball-by-ball chase win probabilities using empirical historical transition tables
 
-Deployed at: **[ipl-score-prediction-model.vercel.app](https://ipl-score-prediction-model.vercel.app)**
+Deployed at: **[ipl-score-prediction-model.vercel.app](https://ipl-score-prediction-model.vercel.app)**  
+ODI Dashboard: **[ipl-score-prediction-model.vercel.app/odi.html](https://ipl-score-prediction-model.vercel.app/odi.html)**
 
 ---
 
@@ -94,72 +95,68 @@ pp/mid/death  0–10      lt6/6_8/8_10/       1_30/31_60/
 
 ---
 
-## API Endpoints
+## ODI Models (50-Over)
 
-### `GET /api/live`
-Scrapes Cricbuzz for current IPL match data. Returns up to 3 matches (live, upcoming, recently completed).
+### 1. ODI Resource Model (Score Predictor)
 
-**Response:**
-```json
-{
-  "matches": [
-    {
-      "matchId": "151954",
-      "slug": "mi-vs-srh-41st-match-indian-premier-league-2026",
-      "teams": ["Mumbai Indians", "Sunrisers Hyderabad"],
-      "status": "completed",
-      "series": "Indian Premier League 2026",
-      "venue": "Wankhede Stadium",
-      "result": "Sunrisers Hyderabad won by 6 wickets",
-      "innings1": { "team": "Mumbai Indians", "runs": 243, "wickets": 5, "overs": "19.6" },
-      "innings2": { "team": "Sunrisers Hyderabad", "runs": 249, "wickets": 4, "overs": "18.4" }
-    }
-  ]
-}
+**File:** `data/odi_model_params.json`  
+**Used by:** `api/odi-recent.js`, the "Load into predictor" button in `odi.html`
+
+The current first-innings evaluation uses 1,017 checkpoints across 274 filtered men's ODI matches from 2023 onwards: **MAE 20.43 runs** and **RMSE 27.17 runs**. It fits a 50-over Duckworth-Lewis inspired exponential resource curve with piecewise parameters and run-rate shrinkage:
+- **Phases:** Overs 1–10, 11–20, 21–30, 31–40, and 41–50
+- **Phase blend:** Smooth transition near each 10-over boundary
+
+**Formula:**
+```
+predicted_final = current_score + RR_eff × C_k × (1 - exp(-b_k × overs_remaining)) × exp(-a_k × wickets_lost^gamma)
+
+RR_eff = α_k × (current_score / overs_completed) + (1 - α_k) × μ_k
 ```
 
-**Vercel config:** 512MB, 10s max duration
+**Training script:** `scripts/update_odi_daily.py --skip-download`
 
 ---
 
-### `GET /api/scorecard?matchId=&slug=`
-Fetches and persists ball-by-ball data to Redis. Called by the frontend when rendering the win probability chart.
+### 2. ODI Monte Carlo Win Probability Simulator
 
-**Data pipeline:**
-1. **Primary:** `GET https://www.cricbuzz.com/api/mcenter/over-by-over/{matchId}/{inningsId}` — paginated JSON API. Fetches all overs for both innings simultaneously. Expands `ovrSummary` strings (e.g. `"4 6 0 W 1"`) into per-ball cumulative scores.
-2. **Fallback:** Full-commentary HTML parse (Cricbuzz embeds a `matchPreviewFullComm` JSON block)
-3. **Live point:** Appends current live score from `/api/live` as the latest data point
-4. **Merge:** New balls merged with Redis-stored history (deduped by `innings-overLabel` key)
-5. **Monotone filter:** Non-monotonic points (stale Redis snapshots) are silently dropped
+**File:** `data/odi_winprob_sim_model.json`  
+**Used by:** client-side JS in `odi.html` (runs directly in browser)
 
-Yields ~120 per-ball data points per innings for a completed match (vs. 9 coarse end-of-over snapshots with the old approach).
+Empirical ball-by-ball transition table trained on 454 men's ODIs from 2023+ (223 unique states, 300 balls per innings).
 
-**Redis keys:**
-- `scorecard_{matchId}` — ball array (TTL: 24h)
-- `scorecard_meta_{matchId}` — metadata (source, updatedAt)
+**State space (223 states):**
+```
+phase (pp/mid/death) × wickets (0–10) × RRR bucket × balls_remaining bucket
+────────────────────────────────────────────────────────────────────────────
+pp (1–10), mid (11–40), death (41–50)
+RRR: lt4 / 4_5 / 5_6 / 6_7 / ge7
+Balls remaining: 1_60 / 61_120 / 121_180 / 181_240 / 241_300
+```
 
-**Vercel config:** 1024MB, 30s max duration
+**Global outcome probabilities** (fallback):
+| W | 0 | 1 | 2 | 3 | 4 | 6 |
+|---|---|---|---|---|---|---|
+| 2.9% | 51.4% | 30.4% | 4.7% | 0.5% | 8.1% | 1.9% |
 
----
-
-### `GET /api/sync`
-Triggered by an external cron job. Internally calls `/api/live` to find all live/completed matches, then runs `fetchAndMergeScorecard` for each.
-
-**Use case:** Ensures Redis stays updated throughout the match without a user needing the page open.
-
-**Vercel config:** 1024MB, 60s max duration
+**Training script:** `scripts/train_odi_winprob_simulator.py`
 
 ---
 
-### `GET /api/recent`
-Returns recent completed matches with actual vs. model-predicted scores. Used by the "Recent Predictions" section of the dashboard.
+## API Endpoints
 
-**Vercel config:** 1024MB, 30s max duration
+### IPL Endpoints
+- `GET /api/live` — Scrapes Cricbuzz for current IPL matches (live, upcoming, completed)
+- `GET /api/scorecard?matchId=&slug=` — Fetches & persists ball-by-ball IPL data to Redis (`scorecard_{matchId}`)
+- `GET /api/sync` — Cron-triggered sync endpoint for IPL
+- `GET /api/recent?days=` — Historical IPL match predictions and MAE summary
+- `GET /api/winprob` — Legacy server-side Monte Carlo simulator
 
----
-
-### `GET /api/winprob` *(legacy — no longer called by frontend)*
-Server-side Monte Carlo endpoint. Still available but the frontend now runs the simulation client-side. Accepts `?runs=&wickets=&overs=&target=&sims=`.
+### ODI Endpoints
+- `GET /api/odi-live` — Scrapes Cricbuzz for live/recent men's ODI matches
+- `GET /api/odi-scorecard?matchId=&slug=` — Fetches & persists ball-by-ball ODI data to Redis (`odi_scorecard_{matchId}`)
+- `GET /api/odi-sync` — Cron-triggered sync endpoint for ODI matches
+- `GET /api/odi-recent?days=` — Historical ODI predictions (2023+) and MAE/RMSE statistics
+- `GET /api/odi-upcoming` — Upcoming ODI fixtures (local service)
 
 ---
 
@@ -191,42 +188,44 @@ During innings 1: `canChart = false` (no chase data yet). Chart appears once inn
 ```
 extended_essay_model/
 ├── api/                          # Vercel serverless functions
-│   ├── live.js                   # Cricbuzz match scraper
-│   ├── scorecard.js              # Ball-by-ball OBO API + Redis persistence
-│   ├── sync.js                   # Cron-triggered sync endpoint
-│   ├── recent.js                 # Recent match predictions
+│   ├── live.js                   # IPL match scraper (Cricbuzz)
+│   ├── scorecard.js              # IPL ball-by-ball OBO API + Redis persistence
+│   ├── sync.js                   # IPL cron-triggered sync endpoint
+│   ├── recent.js                 # IPL recent match predictions
+│   ├── odi-live.js               # ODI match scraper (Cricbuzz)
+│   ├── odi-scorecard.js          # ODI ball-by-ball OBO API + Redis persistence
+│   ├── odi-sync.js               # ODI cron-triggered sync endpoint
+│   ├── odi-recent.js             # ODI recent match predictions
 │   └── winprob.js                # Server-side Monte Carlo (legacy)
 │
 ├── data/
-│   ├── model_params.json         # Resource model fitted parameters
-│   ├── winprob_sim_model.json    # Monte Carlo transition table (178 states)
+│   ├── model_params.json         # IPL resource model fitted parameters
+│   ├── winprob_sim_model.json    # IPL Monte Carlo transition table (178 states)
+│   ├── odi_model_params.json     # ODI resource model fitted parameters
+│   ├── odi_winprob_sim_model.json# ODI Monte Carlo transition table (223 states)
 │   ├── venue_stats.json          # Venue average totals
-│   ├── ipl_innings_snapshots.csv # Historical mid-innings snapshots (resource model training)
+│   ├── ipl_innings_snapshots.csv # IPL historical snapshots (2023+)
+│   ├── odi_innings_snapshots.csv # Filtered ODI first-innings snapshots
 │   ├── winprob_training_data.csv # Win probability training set
 │   └── winprob_test_data.csv     # Win probability test set
 │
 ├── scripts/
-│   ├── train_winprob_simulator.py  # Trains winprob_sim_model.json from ipl_male_json/
-│   ├── parse_matches.py            # Parses Cricsheet JSON → snapshots CSV
-│   ├── parse_matches_by_year.py    # Year-filtered parse
-│   ├── calculate_venue_stats.py    # Computes venue averages
-│   ├── fit_rr_shrinkage.py         # Fits resource model parameters
-│   ├── train_calibrated_model.py   # Trains/evaluates calibrated sklearn model
-│   ├── predict_enhanced_winprob.py # Prediction utilities
-│   ├── score_projection.py         # Score projection utilities
-│   ├── plot_simulator_curve_latest.py # Plot win prob curves for latest match
-│   └── update_ipl_daily.py         # Daily data refresh utility
+│   ├── app.py                    # Local Flask server for IPL dashboard (port 5050)
+│   ├── app_odi.py                # Local Flask server for ODI dashboard (port 5051)
+│   ├── ipl_service.py            # Service layer for IPL resource model
+│   ├── odi_service.py            # Service layer for ODI resource model
+│   ├── train_winprob_simulator.py# Trains IPL winprob_sim_model.json from ipl_male_json/
+│   ├── train_odi_winprob_simulator.py # Trains ODI winprob_sim_model.json from odis_json/
+│   ├── update_ipl_daily.py       # Daily IPL data refresh utility
+│   ├── update_odi_daily.py       # Daily ODI data refresh & parameter fitting utility
+│   ├── process_odi_data.py       # Extracts ODI snapshots from odis_json/
+│   ├── parse_matches.py          # Parses IPL Cricsheet JSON → snapshots CSV
+│   └── fit_rr_shrinkage.py       # Fits IPL resource model parameters
 │
-├── ipl_male_json/                # Cricsheet ball-by-ball match JSON files
-│   └── *.json                    # One file per match (2008–2026)
-│
-├── models/
-│   └── winprob_model_selection.json  # Model selection metadata
-│
-├── docs/
-│   └── WINPROB_MODEL_README.md   # Extended win probability model documentation
-│
-├── index.html                    # Single-page frontend (vanilla JS + Chart.js)
+├── ipl_male_json/                # Cricsheet ball-by-ball IPL matches (2008–2026)
+├── odis_json/                    # Cricsheet ball-by-ball ODI matches (3,200+ matches)
+├── index.html                    # IPL Dashboard frontend (T20 format)
+├── odi.html                      # ODI Dashboard frontend (50-over format)
 ├── package.json                  # Node.js dependencies (axios, cheerio)
 ├── vercel.json                   # Serverless function config
 ├── requirements.txt              # Python dependencies
@@ -313,6 +312,30 @@ python scripts/parse_matches.py
 python scripts/fit_rr_shrinkage.py
 
 # Output: data/model_params.json
+```
+
+---
+
+## Retraining the ODI Models
+
+### 1. ODI Resource Model & Innings Snapshots
+```bash
+# Downloads latest ODI matches from Cricsheet, generates odi_innings_snapshots.csv,
+# and refits RR shrinkage + resource model parameters:
+python scripts/update_odi_daily.py
+
+# Or use existing local odis_json/ files without downloading:
+python scripts/update_odi_daily.py --skip-download
+
+# Output: odi_innings_snapshots.csv and data/odi_model_params.json
+```
+
+### 2. ODI Monte Carlo Win Probability Simulator
+```bash
+# Trains 50-over transition table across 223 game states (2023+ men's ODIs):
+python scripts/train_odi_winprob_simulator.py
+
+# Output: data/odi_winprob_sim_model.json
 ```
 
 ---

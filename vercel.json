@@ -18,6 +18,22 @@
     "api/recent.js": {
       "memory": 1024,
       "maxDuration": 30
+    },
+    "api/odi-live.js": {
+      "memory": 512,
+      "maxDuration": 10
+    },
+    "api/odi-scorecard.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
+    "api/odi-sync.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/odi-recent.js": {
+      "memory": 1024,
+      "maxDuration": 30
     }
   }
 }
