@@ -30,6 +30,8 @@ RESOURCE_PHASE_PARAMS = (
     (40.0, 0.050, 0.003),
 )
 RESOURCE_WICKET_GAMMA = 2.2
+# Losing wickets early constrains an innings more than the same loss late on.
+WICKET_PENALTY_BY_PHASE = (2.50, 1.45, 1.15, 1.00, 0.90)
 PHASE_BLEND_OVERS = 1.0
 RR_SHRINK_ALPHA_PHASE = (0.20, 0.28, 0.35, 0.45, 0.55)
 RR_PHASE_MU = (5.4, 5.6, 5.8, 6.4, 7.2)
@@ -56,7 +58,7 @@ def _load_runtime_model_params(path: str = MODEL_PARAMS_FILE):
         min_date = p.get("min_match_date")
 
         global RR_SHRINK_ALPHA_PHASE, RR_PHASE_MU
-        global RESOURCE_PHASE_PARAMS, RESOURCE_WICKET_GAMMA, PHASE_BLEND_OVERS
+        global RESOURCE_PHASE_PARAMS, RESOURCE_WICKET_GAMMA, WICKET_PENALTY_BY_PHASE, PHASE_BLEND_OVERS
         global PHASE_Z0_A, MIN_MATCH_DATE
 
         if isinstance(rr.get("alpha_by_phase"), list) and len(rr["alpha_by_phase"]) == PHASE_COUNT:
@@ -70,6 +72,8 @@ def _load_runtime_model_params(path: str = MODEL_PARAMS_FILE):
             )
         if rm.get("wicket_gamma") is not None:
             RESOURCE_WICKET_GAMMA = float(rm["wicket_gamma"])
+        if isinstance(rm.get("wicket_penalty_by_phase"), list) and len(rm["wicket_penalty_by_phase"]) == PHASE_COUNT:
+            WICKET_PENALTY_BY_PHASE = tuple(float(x) for x in rm["wicket_penalty_by_phase"])
         if rm.get("phase_blend_overs") is not None:
             PHASE_BLEND_OVERS = float(rm["phase_blend_overs"])
 
@@ -110,7 +114,8 @@ def _resource_for_phase(
     c_k, b_k, a_k = RESOURCE_PHASE_PARAMS[phase_idx]
     overs_r = max(0.0, float(overs_remaining))
     wickets_lost = max(0.0, float(max_wickets - wickets_remaining))
-    return c_k * (1.0 - np.exp(-b_k * overs_r)) * np.exp(-a_k * (wickets_lost ** gamma))
+    penalty = WICKET_PENALTY_BY_PHASE[phase_idx]
+    return c_k * (1.0 - np.exp(-b_k * overs_r)) * np.exp(-a_k * penalty * (wickets_lost ** gamma))
 
 
 def _raw_resource_factor(
@@ -312,6 +317,7 @@ def _model_params_payload():
                 for i, start in enumerate((1, 11, 21, 31, 41))
             ],
             "wicket_gamma": RESOURCE_WICKET_GAMMA,
+            "wicket_penalty_by_phase": list(WICKET_PENALTY_BY_PHASE),
             "phase_blend_overs": PHASE_BLEND_OVERS,
             "formula": "R = C_k*(1-exp(-b_k*overs_remaining))*exp(-a_k*wickets_lost^gamma), blended near 10, 20, 30, and 40 overs",
         },

@@ -62,6 +62,67 @@ def api_odi_upcoming():
     except Exception as e:
         return jsonify({"error": str(e), "fixtures": []}), 500
 
+
+@app.route("/api/odi-live")
+def api_odi_live():
+    """Return every men's ODI listed on Cricbuzz; no team whitelist is applied."""
+    try:
+        import re
+        from datetime import datetime, timezone
+        import requests
+        from bs4 import BeautifulSoup
+
+        response = requests.get(
+            "https://www.cricbuzz.com/cricket-match/live-scores",
+            headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        matches, seen = [], set()
+        for link in soup.select('a[href*="/live-cricket-scores/"]'):
+            href = link.get("href", "")
+            text = link.get_text(" ", strip=True)
+            lower = href.lower()
+            match_id = re.search(r"/live-cricket-scores/(\d+)/", href)
+            if not match_id or match_id.group(1) in seen:
+                continue
+            normal_start = response.text.find(f'"matchId":{match_id.group(1)}')
+            escaped_start = response.text.find(f'\\"matchId\\":{match_id.group(1)}')
+            is_odi_payload = (
+                normal_start >= 0 and '"matchFormat":"ODI"' in response.text[normal_start:normal_start + 2500]
+            ) or (
+                escaped_start >= 0 and '\\"matchFormat\\":\\"ODI\\"' in response.text[escaped_start:escaped_start + 2500]
+            )
+            if (not is_odi_payload and "odi" not in lower) or "women" in lower or "t20" in lower:
+                continue
+            teams = re.search(r"([A-Z]{2,5})\s+vs\s+([A-Z]{2,5})", text)
+            if not teams:
+                continue
+            is_complete = bool(re.search(r"won by|completed|final|abandoned|no result", text, re.I))
+            is_live = not is_complete and bool(re.search(r"opt to bat|opt to bowl|toss|live|batting|bowling|running|need|runs|crr|rrr|innings break|rain|delay|\d+/\d+", text, re.I))
+            score = re.search(r"(\d{1,3})/(\d{1,2})\s*\((\d{1,2}(?:\.\d)?)\)", text)
+            innings = None
+            if score:
+                innings = {"team": teams.group(1), "runs": int(score.group(1)), "wickets": int(score.group(2)), "overs": score.group(3)}
+            matches.append({
+                "matchId": match_id.group(1),
+                "slug": href.split("/live-cricket-scores/")[1].split("/", 1)[1] if "/" in href.split("/live-cricket-scores/")[1] else "",
+                "teams": [teams.group(1), teams.group(2)],
+                "status": "completed" if is_complete else "live" if is_live else "upcoming",
+                "series": "ODI",
+                "result": "Match completed" if is_complete else "In progress" if is_live else "Upcoming",
+                "scraped_at": datetime.now(timezone.utc).isoformat(),
+                "innings1": innings,
+                "innings2": None,
+                "score": {"runs": innings["runs"] if innings else None, "wickets": innings["wickets"] if innings else None, "overs_input": innings["overs"] if innings else None},
+                "href": href,
+            })
+            seen.add(match_id.group(1))
+        return jsonify({"matches": matches[:12]})
+    except Exception as e:
+        return jsonify({"error": str(e), "matches": []}), 500
+
 @app.route("/api/live")
 def api_live():
     """Scrape live IPL matches from Cricbuzz using the current page structure."""

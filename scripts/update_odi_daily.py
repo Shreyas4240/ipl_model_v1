@@ -207,7 +207,7 @@ def fit_resource_v2(df: pd.DataFrame, rr_shrink: dict):
         (0.0005, 0.25), (0.0005, 0.25), (0.0005, 0.25),
         (1.0, 2.5),
     ]
-    res = minimize(mae_all, x0=x0, method="L-BFGS-B", bounds=bounds, options={"maxiter": 400})
+    res = minimize(mae_all, x0=x0, method="L-BFGS-B", bounds=bounds, options={"maxiter": 800, "ftol": 1e-9})
     alpha, c, b, a, g = unpack(res.x)
     return {
         "alpha_by_phase": [float(v) for v in alpha],

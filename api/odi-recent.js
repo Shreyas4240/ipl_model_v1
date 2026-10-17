@@ -96,6 +96,7 @@ function getResourceModelParams(modelParams) {
     return {
       phases: m.phases,
       wicketGamma: Number(m.wicket_gamma || 2.5),
+      wicketPenaltyByPhase: Array.isArray(m.wicket_penalty_by_phase) && m.wicket_penalty_by_phase.length === PHASE_COUNT ? m.wicket_penalty_by_phase.map(Number) : [2.50, 1.45, 1.15, 1.00, 0.90],
       phaseBlendOvers: Number(m.phase_blend_overs || 0.5),
     };
   }
@@ -108,6 +109,7 @@ function getResourceModelParams(modelParams) {
       { C: 40.0, b: 0.050, a_w: 0.003 },
     ],
     wicketGamma: 2.2,
+    wicketPenaltyByPhase: [2.50, 1.45, 1.15, 1.00, 0.90],
     phaseBlendOvers: 1.0,
   };
 }
@@ -127,7 +129,7 @@ function resourceForPhase(phaseIdx, oversRem, wicketsRem, model) {
   const aW = Number(p.a_w || 0);
   const oversR = Math.max(0, Number(oversRem));
   const wicketsLost = Math.max(0, 10 - Number(wicketsRem));
-  return C * (1 - Math.exp(-b * oversR)) * Math.exp(-aW * Math.pow(wicketsLost, model.wicketGamma));
+  return C * (1 - Math.exp(-b * oversR)) * Math.exp(-aW * model.wicketPenaltyByPhase[phaseIdx] * Math.pow(wicketsLost, model.wicketGamma));
 }
 
 function rawResourceFactor(oversRem, wicketsRem, oversCompleted, modelParams) {
