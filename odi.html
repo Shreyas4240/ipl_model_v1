@@ -432,10 +432,6 @@
       object-fit: contain;
       border-radius: 50%;
     }
-    .team-flag {
-      font-size: 24px;
-      line-height: 1;
-    }
     .team-logo-fallback {
       width: 28px;
       height: 28px;
@@ -1363,24 +1359,24 @@
 
     /* ── ODI TEAMS DICTIONARY (LOGOS & ABBREVIATIONS) ──── */
     const ODI_TEAM_LOGOS = {
-      'India': '🇮🇳',
-      'Australia': '🇦🇺',
-      'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-      'South Africa': '🇿🇦',
-      'New Zealand': '🇳🇿',
-      'Pakistan': '🇵🇰',
-      'Sri Lanka': '🇱🇰',
-      'Bangladesh': '🇧🇩',
-      'Afghanistan': '🇦🇫',
-      'West Indies': '🏴󠁧󠁢󠁮󠁩󠁲󠁿',
-      'Netherlands': '🇳🇱',
-      'Ireland': '🇮🇪',
-      'Zimbabwe': '🇿🇼',
-      'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
-      'Nepal': '🇳🇵',
-      'United States of America': '🇺🇸',
-      'United States': '🇺🇸',
-      'USA': '🇺🇸',
+      'India': 'https://flagcdn.com/w40/in.png',
+      'Australia': 'https://flagcdn.com/w40/au.png',
+      'England': 'https://flagcdn.com/w40/gb.png',
+      'South Africa': 'https://flagcdn.com/w40/za.png',
+      'New Zealand': 'https://flagcdn.com/w40/nz.png',
+      'Pakistan': 'https://flagcdn.com/w40/pk.png',
+      'Sri Lanka': 'https://flagcdn.com/w40/lk.png',
+      'Bangladesh': 'https://flagcdn.com/w40/bd.png',
+      'Afghanistan': 'https://flagcdn.com/w40/af.png',
+      'West Indies': 'https://upload.wikimedia.org/wikipedia/en/thumb/1/12/Cricket_West_Indies_Logo.svg/40px-Cricket_West_Indies_Logo.svg.png', // Official WI cricket logo
+      'Netherlands': 'https://flagcdn.com/w40/nl.png',
+      'Ireland': 'https://flagcdn.com/w40/ie.png',
+      'Zimbabwe': 'https://flagcdn.com/w40/zw.png',
+      'Scotland': 'https://flagcdn.com/w40/gb-sct.png',
+      'Nepal': 'https://flagcdn.com/w40/np.png',
+      'United States of America': 'https://flagcdn.com/w40/us.png',
+      'United States': 'https://flagcdn.com/w40/us.png',
+      'USA': 'https://flagcdn.com/w40/us.png',
     };
 
     const ODI_TEAM_ABBR = {
@@ -1825,9 +1821,6 @@
       function logoHtml(team) {
         const logo = ODI_TEAM_LOGOS[team] || '';
         const abbr = ODI_TEAM_ABBR[team] || team.slice(0, 3).toUpperCase();
-        if (logo && !logo.startsWith('http')) {
-          return '<span class="team-flag">' + logo + '</span>';
-        }
         if (logo) {
           return '<img src="' + logo + '" alt="' + team + '" class="team-logo" loading="lazy" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';">' +
                  '<div class="team-logo-fallback" style="display:none;">' + abbr + '</div>';
