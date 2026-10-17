@@ -902,23 +902,9 @@
           <button type="button" class="keypad-btn" id="keypad-z0-plus-2">+</button>
           <span class="keypad-label">a</span>
           <span class="keypad-val" id="keypad-a-2">—</span>
-          <button type="button" class="keypad-btn" id="keypad-a-minus-2">−</button>
-          <button type="button" class="keypad-btn" id="keypad-a-plus-2">+</button>
+          <button type="button" class="keypad-btn" id="keypad-a-minus-2" aria-label="Decrease a phase 3">−</button>
+          <button type="button" class="keypad-btn" id="keypad-a-plus-2" aria-label="Increase a phase 3">+</button>
         </div>
-          <span class="keypad-phase-label">Overs 41–50</span>
-          <span class="keypad-label">Z₀</span>
-          <span class="keypad-val" id="keypad-z0-4">—</span>
-          <button type="button" class="keypad-btn" id="keypad-z0-minus-4">−</button>
-          <button type="button" class="keypad-btn" id="keypad-z0-plus-4">+</button>
-          <span class="keypad-label">a</span>
-          <span class="keypad-val" id="keypad-a-4">—</span>
-          <button type="button" class="keypad-btn" id="keypad-a-minus-4">−</button>
-          <button type="button" class="keypad-btn" id="keypad-a-plus-4">+</button>
-        </div>
-        <span class="simulated-stat" id="simulated-mae">Simulated MAE: —</span>
-        <span class="simulated-stat" id="simulated-rmse">Simulated RMSE: —</span>
-        <button type="button" class="keypad-reset" id="keypad-reset">Reset to model</button>
-        <p class="keypad-hint">Adjust each segment with +/−; charts update (no typing).</p>
       </div>
       <div class="summary" id="recent-summary"></div>
       <div class="charts" id="recent-charts" style="display: none;">
@@ -1154,10 +1140,6 @@
       const errors = results.map(r => r.error);
       const mae = errors.length ? (errors.reduce((s, e) => s + e, 0) / errors.length).toFixed(2) : '—';
       const rmse = errors.length ? Math.sqrt(errors.reduce((s, e) => s + e * e, 0) / errors.length).toFixed(2) : '—';
-      const maeEl = document.getElementById('simulated-mae');
-      const rmseEl = document.getElementById('simulated-rmse');
-      if (maeEl) maeEl.textContent = 'Simulated MAE: ' + mae + ' runs';
-      if (rmseEl) rmseEl.textContent = 'Simulated RMSE: ' + rmse + ' runs';
       drawCharts(results, lastModelParams);
       if (typeof updateLivePrediction === 'function') updateLivePrediction();
     }
@@ -1346,8 +1328,8 @@
       lastRawResults = results;
       lastModelParams = data.model_params || null;
       refreshRRShrinkNote();
-      keypadZ0 = [null, null, null, null, null];
-      keypadA = [null, null, null, null, null];
+      keypadZ0 = [null, null, null];
+      keypadA = [null, null, null];
       drawCharts(results, data.model_params);
       const tableWrap = document.getElementById('recent-table-wrap');
       if (results.length === 0) {
