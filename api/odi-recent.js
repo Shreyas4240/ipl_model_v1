@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const EVALUATION_OVERS = new Set([30, 35, 40, 45]);
-const PHASE_BOUNDARIES = [10, 20, 30, 40];
-const PHASE_COUNT = 5;
+const PHASE_BOUNDARIES = [10, 40];
+const PHASE_COUNT = 3;
 const FULL_MEMBER_TEAMS = new Set([
   'Afghanistan', 'Australia', 'Bangladesh', 'England', 'India', 'Ireland',
   'New Zealand', 'Pakistan', 'South Africa', 'Sri Lanka', 'West Indies', 'Zimbabwe',
@@ -85,8 +85,8 @@ function getRRShrink(modelParams) {
     };
   }
   return {
-    alphaByPhase: [0.20, 0.28, 0.35, 0.45, 0.55],
-    muByPhase: [5.4, 5.6, 5.8, 6.4, 7.2],
+    alphaByPhase: [0.052, 0.166, 0.304],
+    muByPhase: [4.90, 5.15, 5.67],
   };
 }
 
@@ -96,20 +96,16 @@ function getResourceModelParams(modelParams) {
     return {
       phases: m.phases,
       wicketGamma: Number(m.wicket_gamma || 2.5),
-      wicketPenaltyByPhase: Array.isArray(m.wicket_penalty_by_phase) && m.wicket_penalty_by_phase.length === PHASE_COUNT ? m.wicket_penalty_by_phase.map(Number) : [2.50, 1.45, 1.15, 1.00, 0.90],
       phaseBlendOvers: Number(m.phase_blend_overs || 0.5),
     };
   }
   return {
     phases: [
-      { C: 55.0, b: 0.040, a_w: 0.008 },
-      { C: 52.0, b: 0.040, a_w: 0.006 },
-      { C: 50.0, b: 0.035, a_w: 0.004 },
-      { C: 45.0, b: 0.042, a_w: 0.004 },
-      { C: 40.0, b: 0.050, a_w: 0.003 },
+      { C: 55.0, b: 0.074, a_w: 0.034 },
+      { C: 50.0, b: 0.055, a_w: 0.021 },
+      { C: 40.0, b: 0.068, a_w: 0.013 },
     ],
-    wicketGamma: 2.2,
-    wicketPenaltyByPhase: [2.50, 1.45, 1.15, 1.00, 0.90],
+    wicketGamma: 2.08,
     phaseBlendOvers: 1.0,
   };
 }
@@ -129,7 +125,7 @@ function resourceForPhase(phaseIdx, oversRem, wicketsRem, model) {
   const aW = Number(p.a_w || 0);
   const oversR = Math.max(0, Number(oversRem));
   const wicketsLost = Math.max(0, 10 - Number(wicketsRem));
-  return C * (1 - Math.exp(-b * oversR)) * Math.exp(-aW * model.wicketPenaltyByPhase[phaseIdx] * Math.pow(wicketsLost, model.wicketGamma));
+  return C * (1 - Math.exp(-b * oversR)) * Math.exp(-aW * Math.pow(wicketsLost, model.wicketGamma));
 }
 
 function rawResourceFactor(oversRem, wicketsRem, oversCompleted, modelParams) {
