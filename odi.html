@@ -432,6 +432,10 @@
       object-fit: contain;
       border-radius: 50%;
     }
+    .team-flag {
+      font-size: 24px;
+      line-height: 1;
+    }
     .team-logo-fallback {
       width: 28px;
       height: 28px;
@@ -1359,24 +1363,24 @@
 
     /* ── ODI TEAMS DICTIONARY (LOGOS & ABBREVIATIONS) ──── */
     const ODI_TEAM_LOGOS = {
-      'India': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313128.logo.png',
-      'Australia': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313125.logo.png',
-      'England': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313114.logo.png',
-      'South Africa': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313127.logo.png',
-      'New Zealand': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/340400/340493.png',
-      'Pakistan': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313129.logo.png',
-      'Sri Lanka': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313130.logo.png',
-      'Bangladesh': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313126.logo.png',
-      'Afghanistan': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313131.logo.png',
-      'West Indies': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/317100/317128.png',
-      'Netherlands': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313136.logo.png',
-      'Ireland': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313135.logo.png',
-      'Zimbabwe': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313132.logo.png',
-      'Scotland': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313133.logo.png',
-      'Nepal': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313134.logo.png',
-      'United States of America': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313137.logo.png',
-      'United States': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313137.logo.png',
-      'USA': 'https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_50/lsci/db/PICTURES/CMS/313100/313137.logo.png',
+      'India': '🇮🇳',
+      'Australia': '🇦🇺',
+      'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+      'South Africa': '🇿🇦',
+      'New Zealand': '🇳🇿',
+      'Pakistan': '🇵🇰',
+      'Sri Lanka': '🇱🇰',
+      'Bangladesh': '🇧🇩',
+      'Afghanistan': '🇦🇫',
+      'West Indies': '🏴󠁧󠁢󠁮󠁩󠁲󠁿',
+      'Netherlands': '🇳🇱',
+      'Ireland': '🇮🇪',
+      'Zimbabwe': '🇿🇼',
+      'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+      'Nepal': '🇳🇵',
+      'United States of America': '🇺🇸',
+      'United States': '🇺🇸',
+      'USA': '🇺🇸',
     };
 
     const ODI_TEAM_ABBR = {
@@ -1821,6 +1825,9 @@
       function logoHtml(team) {
         const logo = ODI_TEAM_LOGOS[team] || '';
         const abbr = ODI_TEAM_ABBR[team] || team.slice(0, 3).toUpperCase();
+        if (logo && !logo.startsWith('http')) {
+          return '<span class="team-flag">' + logo + '</span>';
+        }
         if (logo) {
           return '<img src="' + logo + '" alt="' + team + '" class="team-logo" loading="lazy" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';">' +
                  '<div class="team-logo-fallback" style="display:none;">' + abbr + '</div>';
