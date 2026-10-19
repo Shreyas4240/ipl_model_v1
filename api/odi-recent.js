@@ -204,8 +204,13 @@ module.exports = async function handler(req, res) {
       .filter((s) => s.overs_remaining > 0 && s.run_rate > 0 && s.wickets_lost < 10)
       .map((s) => {
         const meta = matchMeta.get(s.match_file) || { date: '', teams: [] };
+        // Skip if no teams data
+        if (!meta.teams || meta.teams.length < 2) return null;
+        // Skip associate vs associate matches
         if (isAssociateVsAssociate(meta.teams)) return null;
-        const firstInningsTeam = (meta.teams && meta.teams.length) ? meta.teams[0] : null;
+        // Skip if neither team is a full member (non-international)
+        if (!meta.teams.some((team) => FULL_MEMBER_TEAMS.has(team))) return null;
+        const firstInningsTeam = meta.teams[0] || null;
         if (firstInningsTeam && s.innings_team !== firstInningsTeam) return null;
         const predicted = predictScore(
           s.current_score,
