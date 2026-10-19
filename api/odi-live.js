@@ -37,6 +37,11 @@ const ABBR_TO_TEAM = {
   PNG: 'Papua New Guinea',
 };
 
+const FULL_MEMBER_TEAMS = new Set([
+  'India', 'Australia', 'England', 'South Africa', 'New Zealand', 'Pakistan',
+  'Sri Lanka', 'Bangladesh', 'Afghanistan', 'West Indies', 'Zimbabwe', 'Ireland',
+]);
+
 function matchIdFromHref(href) {
   const m = String(href || '').match(/\/live-cricket-scores\/(\d+)\//);
   return m ? m[1] : null;
@@ -46,12 +51,16 @@ function getFullTeamName(abbr) {
   return ABBR_TO_TEAM[String(abbr || '').toUpperCase()] || abbr;
 }
 
-function isMensOdiHref(href) {
+function isMensOdiMatch(pageHtml, matchId, href) {
   const h = String(href || '').toLowerCase();
-  if (!h.includes('odi')) return false;
   if (h.includes('t20') || h.includes('twenty20')) return false;
   if (h.includes('women')) return false;
-  return true;
+  // League Two and other ODI URLs often omit "odi"; Cricbuzz's page payload is authoritative.
+  const normalStart = pageHtml.indexOf(`"matchId":${matchId}`);
+  const escapedStart = pageHtml.indexOf(`\\"matchId\\":${matchId}`);
+  const normalOdi = normalStart >= 0 && pageHtml.slice(normalStart, normalStart + 2500).includes('"matchFormat":"ODI"');
+  const escapedOdi = escapedStart >= 0 && pageHtml.slice(escapedStart, escapedStart + 2500).includes('\\"matchFormat\\":\\"ODI\\"');
+  return normalOdi || escapedOdi || h.includes('odi');
 }
 
 function getRedisConfig() {
@@ -284,12 +293,15 @@ async function getLiveMatchesData() {
     const text = $(el).text().trim();
     const matchId = matchIdFromHref(href);
     if (!matchId || seenIds.has(matchId)) return;
-    if (!isMensOdiHref(href)) return;
+    if (!isMensOdiMatch(pageHtml, matchId, href)) return;
 
     const vsMatch = text.match(/([A-Z]{2,5})\s+vs\s+([A-Z]{2,5})/);
     if (!vsMatch) return;
     const team1 = ABBR_TO_TEAM[vsMatch[1]] || vsMatch[1];
     const team2 = ABBR_TO_TEAM[vsMatch[2]] || vsMatch[2];
+
+    // Filter for international matches: at least one team must be a full member
+    if (!FULL_MEMBER_TEAMS.has(team1) && !FULL_MEMBER_TEAMS.has(team2)) return;
 
     let status = 'upcoming';
     let result = 'Upcoming';
