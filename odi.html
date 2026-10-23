@@ -9,8 +9,9 @@
   <title>ODI Resource Model & Win Probability</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
   <style>
     /* ── THEME TOKENS ────────────────────────────────────── */
     :root {
@@ -1361,7 +1362,7 @@
     const ODI_TEAM_LOGOS = {
       'India': 'https://flagcdn.com/w40/in.png',
       'Australia': 'https://flagcdn.com/w40/au.png',
-      'England': 'https://flagcdn.com/w40/gb.png',
+      'England': 'https://flagcdn.com/w40/gb-eng.png',
       'South Africa': 'https://flagcdn.com/w40/za.png',
       'New Zealand': 'https://flagcdn.com/w40/nz.png',
       'Pakistan': 'https://flagcdn.com/w40/pk.png',
@@ -2050,6 +2051,9 @@
     }
 
     document.getElementById('days-select').addEventListener('change', loadRecent);
+
+    // Defer initial load to after page renders
+    setTimeout(loadRecent, 100);
 
     document.getElementById('live-match-list').addEventListener('click', function (e) {
       const btn = e.target.closest('.live-match-btn');
